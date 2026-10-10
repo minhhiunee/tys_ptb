@@ -22,6 +22,8 @@ enum FolderEnum: string
     case PRIVATE = 'private';
     case RESOURCES = 'resources';
     case VAR = 'var';
+    case LR_IMPORT = 'data/lr_import';
+    case LR_EXPORT = 'data/lr_export';
 
     public function public(): string
     {
@@ -50,6 +52,8 @@ enum FolderEnum: string
             FolderEnum::PRIVATE => 'private',
             FolderEnum::RESOURCES => 'resources',
             FolderEnum::VAR => 'var',
+            FolderEnum::LR_IMPORT => 'lr_import',
+            FolderEnum::LR_EXPORT => 'lr_export',
         };
     }
 }

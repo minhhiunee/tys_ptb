@@ -28,6 +28,12 @@ class ProcessService
                 'command' => $config['commands']['nodebin'] . ' ' . PathUtility::getAbsolutePath('resources/js/sync-to-drive.js'),
                 'enabled' => ($config['synctodrive']['enabled']),
                 'killSignal' => 15,
+            ]),
+            ProcessFactory::fromConfig([
+                'name' => 'lightroom_watcher',
+                'command' => 'php ' . PathUtility::getAbsolutePath('api/lightroomWatcher.php'),
+                'enabled' => ($config['lightroom']['enabled'] ?? false),
+                'killSignal' => 15,
             ])
         ];
     }

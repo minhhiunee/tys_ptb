@@ -117,6 +117,41 @@ try {
         $vars['tmpFile'] = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
         $vars['thumbFile'] = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
 
+        // Lightroom Bridge Workflow
+        if ($config['lightroom']['enabled'] ?? false) {
+            $lrImportFile = FolderEnum::LR_IMPORT->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
+            $lrExportFile = FolderEnum::LR_EXPORT->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
+            
+            if (copy($vars['tmpFile'], $lrImportFile)) {
+                $logger->debug('Lightroom mode: Waiting for exported file ' . $vars['singleImageFile']);
+                $timeout = $config['lightroom']['poll_timeout'] ?? 60;
+                $startTime = time();
+                $found = false;
+                
+                while (time() - $startTime < $timeout) {
+                    if (file_exists($lrExportFile) && filesize($lrExportFile) > 0) {
+                        // Wait a tiny bit to ensure Lightroom finished writing the file
+                        usleep(500000); 
+                        $found = true;
+                        break;
+                    }
+                    usleep(1000000); // Wait 1 second
+                }
+                
+                if ($found) {
+                    $logger->debug('Lightroom mode: Picked up exported file.');
+                    copy($lrExportFile, $vars['tmpFile']);
+                    @unlink($lrExportFile); // Clean up export folder
+                    // Override any filter if we used Lightroom
+                    $vars['imageFilter'] = ImageFilterEnum::PLAIN;
+                } else {
+                    $logger->error('Lightroom mode: Timeout waiting for exported file.');
+                }
+            } else {
+                $logger->error('Lightroom mode: Failed to copy to import folder.');
+            }
+        }
+
         if (!file_exists($vars['tmpFile'])) {
             throw new \Exception('Image doesn\'t exist.');
         }

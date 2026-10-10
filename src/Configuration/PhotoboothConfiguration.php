@@ -107,6 +107,7 @@ class PhotoboothConfiguration implements ConfigurationInterface
                 ->append(SoundConfiguration::getNode())
                 ->append(RembgConfiguration::getNode())
                 ->append(ThemeConfiguration::getNode())
+                ->append(\Photobooth\Configuration\Section\LightroomConfiguration::getNode())
             ->end();
 
         return $treeBuilder;

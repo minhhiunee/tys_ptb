@@ -294,8 +294,8 @@ if ($action === 'reset') {
         $logger->debug('Picture frame empty. Disabled picture frame.');
     }
 
-    if ($newConfig['collage']['take_frame'] && $newConfig['collage']['frame'] === '') {
-        $newConfig['collage']['take_frame'] = false;
+    if ($newConfig['collage']['take_frame'] !== 'off' && $newConfig['collage']['frame'] === '') {
+        $newConfig['collage']['take_frame'] = 'off';
         $logger->debug('Collage frame empty. Disabled collage frame.');
     }
 

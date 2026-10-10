@@ -3871,6 +3871,22 @@ return [
             'value' => htmlentities($config['commands']['shutdown'] ?? ''),
         ],
     ],
+    'lightroom' => [
+        'view' => 'basic',
+        'lightroom_enabled' => [
+            'view' => 'basic',
+            'type' => 'checkbox',
+            'name' => 'lightroom[enabled]',
+            'value' => $config['lightroom']['enabled'],
+        ],
+        'lightroom_poll_timeout' => [
+            'view' => 'expert',
+            'type' => 'number',
+            'placeholder' => 60,
+            'name' => 'lightroom[poll_timeout]',
+            'value' => $config['lightroom']['poll_timeout'],
+        ],
+    ],
     'reset' => [
         'view' => 'basic',
         'reset_remove_media' => [
