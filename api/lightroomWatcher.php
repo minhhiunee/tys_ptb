@@ -24,6 +24,10 @@ $exportDir = FolderEnum::LR_EXPORT->absolute();
 $tmpDir = FolderEnum::TEMP->absolute();
 $internalApi = __DIR__ . '/applyEffectsInternal.php';
 
+// Write PID file so ProcessService can track and kill us
+$pidFile = \Photobooth\Utility\PathUtility::getAbsolutePath('var/run/lightroom_watcher.pid');
+file_put_contents($pidFile, getmypid());
+
 while (true) {
     $config = ConfigurationService::getInstance()->getConfiguration();
     

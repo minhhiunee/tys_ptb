@@ -5,6 +5,7 @@ if (php_sapi_name() !== 'cli') {
 
 $_POST['file'] = $argv[1];
 $_POST['style'] = 'photo';
+$_POST['skip_lightroom'] = true;
 
 // Bypass CSRF for internal CLI execution
 function checkCsrfOrFail($source) {}

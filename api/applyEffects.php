@@ -118,7 +118,7 @@ try {
         $vars['thumbFile'] = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
 
         // Lightroom Bridge Workflow
-        if ($config['lightroom']['enabled'] ?? false) {
+        if (($config['lightroom']['enabled'] ?? false) && empty($_POST['skip_lightroom'])) {
             $lrImportFile = FolderEnum::LR_IMPORT->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
             $lrExportFile = FolderEnum::LR_EXPORT->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
             
