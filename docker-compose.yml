@@ -8,3 +8,8 @@ services:
       - "443:443"
     environment:
       - COMPOSER_VERSION=2
+    volumes:
+      - ./data:/app/data
+      - ./var:/app/var
+      - ./config:/app/config
+      - ./private:/app/private
