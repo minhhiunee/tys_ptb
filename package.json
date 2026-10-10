@@ -33,16 +33,7 @@
     "watch:gulp": "gulp watch",
     "watch:lint": "npm-run-all --parallel watch:gulp eslint -- --watch"
   },
-  "author": "Andreas Blaesius <andi@unlegacy-android.org>",
   "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/PhotoboothProject/photobooth.git"
-  },
-  "homepage": "https://photoboothproject.github.io",
-  "bugs": {
-    "url": "https://github.com/PhotoboothProject/photobooth/issues"
-  },
   "keywords": [
     "photobooth",
     "gphoto2",

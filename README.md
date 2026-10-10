@@ -1,202 +1,68 @@
-# Photobooth v4
+# Photobooth System (tys_ptb)
 
-![](resources/img/logo/banner.png)
+A powerful and customizable Photobooth web interface designed for stability, high performance, and ease of deployment.
 
-A Photobooth web interface for Linux and Windows (often also called a "photo box" in some languages/regions).
+## 🚀 Technology Stack
 
-Photobooth was initially developped by Andre Rinas to use on a Raspberry Pi, you can find his source [here](https://github.com/andreknieriem/photobooth).
-In 2019 Andreas Blaesius picked up the work and continued to work on the source.
-With the help of the community Photobooth grew to a powerfull Photobooth software with a lot of features and possibilities.
+This project is built using a modern, hybrid tech stack combining a robust PHP backend with a dynamic, responsive frontend.
 
-_(The full changelog can be found on [https://photoboothproject.github.io](https://photoboothproject.github.io).)_
+### Backend
+- **Core:** PHP 8.4
+- **Architecture:** Object-Oriented PHP (OOP) with PSR-4 autoloading
+- **Dependency Management:** Composer
+- **Key Libraries:** 
+  - `symfony/*` components (Console, Finder, Filesystem, Translation)
+  - `league/flysystem` (Filesystem abstraction)
+  - `monolog` (Logging)
+  - `endroid/qr-code` (QR Code generation)
 
-[![Chat on Telegram](https://img.shields.io/badge/Chat%20on-Telegram-blue.svg)](https://t.me/PhotoboothGroup)
+### Frontend
+- **Logic & Interactions:** JavaScript (ES6+), jQuery, Socket.io
+- **Styling:** SCSS, TailwindCSS, PostCSS
+- **UI Components:** PhotoSwipe (Gallery), FontAwesome
+- **Build Tools:** Node.js (>= v20.15), Gulp (Asset compilation, Minification, Pipeline)
 
-[![Translate on Crowdin](https://img.shields.io/badge/Traslate%20on-Crowdin-green.svg)](https://crowdin.com/project/photobooth)
+### Deployment & Environment
+- **Containerization:** Docker & Docker Compose
+- **Base Image:** `webdevops/php-apache:8.4`
+- **Supported OS:** Linux, Windows (via Docker or local web server environments)
 
-_Latest development version:_
-[![Lint](https://github.com/PhotoboothProject/photobooth/actions/workflows/linters.yaml/badge.svg)](https://github.com/PhotoboothProject/photobooth/actions/workflows/lint.yaml)
-[![gulp-sass](https://github.com/PhotoboothProject/photobooth/actions/workflows/gulp_sass.yml/badge.svg)](https://github.com/PhotoboothProject/photobooth/actions/workflows/gulp_sass.yml)
-[![Build](https://github.com/PhotoboothProject/photobooth/actions/workflows/build.yml/badge.svg)](https://github.com/PhotoboothProject/photobooth/actions/workflows/build.yml)
+---
 
-## :camera: Screenshots
+## 📂 Project Structure
 
-![](https://raw.githubusercontent.com/PhotoboothProject/PhotoboothProject.github.io/master/resources/img/start.png)
+The codebase is organized into a modular structure to separate core logic, APIs, and frontend assets:
 
-## :gear: Supported Platforms and Cameras
+```text
+├── admin/          # Admin panel interface
+├── api/            # Backend API endpoints handling core operations (capture, print, config)
+├── assets/         # Raw frontend source files (SCSS, JS) - processed by Gulp
+├── config/         # System configuration and runtime settings
+├── lib/            # Legacy or external PHP library helpers
+├── private/        # User-specific assets (backgrounds, custom frames) - ignored in version control
+├── resources/      # Compiled & minified public assets (CSS, JS, fonts, language files)
+├── src/            # Core PHP classes, Enums, Factories, and Services (PSR-4 compliant)
+├── template/       # UI templates and HTML/PHP view components
+├── welcome/        # Startup dashboard / Welcome screen
+├── package.json    # Node.js dependencies and NPM scripts
+├── composer.json   # PHP dependencies
+└── Dockerfile      # Instructions for building the container image
+```
 
-| Hardware-Platform  | Software-Platform                  | Supported Cameras                                                                                                                                                                     |
-|--------------------|------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| Raspberry Pi 3 / 4 / 5 | Raspberry Pi OS 64bit Bookworm / Trixie    | [Camera Modules](https://www.raspberrypi.com/documentation/accessories/camera.html), [gphoto2 DSLR](http://www.gphoto.org/proj/libgphoto2/support.php), webcam _*1_ |
-| Generic PC         | Debian/Ubuntu                      | [gphoto2 DSLR](http://www.gphoto.org/proj/libgphoto2/support.php), webcam _*1_                                                                                      |
-| Generic PC         | Windows                            | [digiCamControl](http://digicamcontrol.com/), webcam _*1_                                                                                                           |
+---
 
-_*1 Capture from webcam is possible using third party software e.g. [fswebcam](https://www.sanslogic.co.uk/fswebcam/) on Linux, else it only works on access via [http://localhost](http://localhost)_
+## 🛠 Quick Start (Docker)
 
-## :gear: Prerequisites
+The easiest way to run the application is by using Docker Compose.
 
-| Software  | Required version | Note                                                                                                                                                                |
-| --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Node.js   | >=v20.15.0       | Currently only v20 is tested. Our installer will check your Node.js version and suggest an update/downgrade if needed. Versions below v20 aren't supported anymore. |
-| npm       | >=v10.7.0        |                                                                                                                                                                     |
-| php       | >=v8.4           |                                                                                                                                                                     |
-| Webserver |                  | Apache or Nginx is needed. By default Apache webserver is installed by our installer.                                                                                 |
+1. Ensure Docker and Docker Compose are installed on your system.
+2. Clone this repository.
+3. Start the application:
+   ```bash
+   docker compose up --build -d
+   ```
+4. Access the application:
+   - User Interface: `http://localhost`
+   - Admin Panel: `http://localhost/admin`
 
-## :heart_eyes: Features
-
--   Works on Windows and Linux.
--   Images are processed with GD.
--   Gallery based on [PhotoSwipe v5](https://github.com/PhotoboothProject/PhotoSwipe)
--   Standalone Gallery based on PhotoSwipe v5 ([localhost/gallery](http://localhost/gallery)).
--   Standalone Slideshow based on PhotoSwipe v5 ([localhost/slideshow](http://localhost/slideshow)).
--   Access login via [localhost/login](http://localhost/login).
--   Offline manual with settings explained at [localhost/manual](http://localhost/manual).
--   Offline FAQ at [localhost/manual/faq](http://localhost/manual/faq).
-- Disk usage page, access via admin panel or directly at [localhost/admin/diskusage](http://localhost/admin/diskusage) (
-  or [localhost/photobooth/admin/diskusage](http://localhost/photobooth/admin/diskusage)).
-- Settings can be changed via Admin Panel at ([localhost/admin](http://localhost/admin)) (or [localhost/photobooth/admin](http://localhost/photobooth/admin)):
-    -   Multi-language support:
-        -   [Translate on Crowdin](https://crowdin.com/project/photobooth)
-    -   Login to protect Admin Panel, Start page and/or Manual & FAQ can be enabled.
-    -   Hardware Button functionality, supports two separate modes of operation (select via admin panel):
-        -   **Button Mode**: Distinct hardware buttons can be connected to distinct GPIOs. Each button will trigger a separate functionality (i.e. take photo).
-        -   **Rotary Mode**: A rotary encoder connected to GPIOs will drive the input on the screen. This enables to use the rotary to scroll through the Photobooth UI buttons, and click to select actions.
-    -   Gallery: allow to adjust the look and feel (settings explained inside the manual).
-    -   Choose between date-formatted or random image names.
-    -   Choose an image filter after taking a picture.
-    -   QR-Code to allow downloading pictures from your Photobooth.
-    -   Pictures can be directly downloaded from the gallery.
-    -   Print feature:
-        -   Optional: Print a frame on your picture
-        -   Optional: Print text on your picture.
-        -   Optional: Print QR-Code on the right side of your picture.
-        -   Optional: Auto print function
-        -   Optional: allow to delay auto print
-        -   Optional: allow to adjust time "Started printing! Please wait..." is visible
-        -   Optional: allow to trigger print via defined key
-        -   Optional: options to show the print button independent (e.g. can be only visible on gallery)
-    -   Pictures can be sent via e-mail.
-    -   Different Live Preview options
-    -   Event specific (e.g. wedding, birthday) config to show a symbol (e.g. heart)
-        between some text on the start page.
-    -   Chroma keying
-    -   Photo collage function: take pictures in a row with or without
-        interruption and let it generate a collage out of it. Choose between different collage layouts!
-    -   Save pictures with a Polaroid effect.
-    -   Adjust take picture and print commands.
-    -   Adjust the style of Photobooth via admin panel.
--   ... _And many more options to adjust and style Photobooth for your personal needs_
-
-## :wrench: Installation & Troubleshooting
-
-Please follow the installation instructions
-[here](https://photoboothproject.github.io/) to setup
-Photobooth.
-
-If you're having trouble or questions please take a look at our
-[FAQ](https://photoboothproject.github.io/faq/)
-before opening a new issue.
-
-For local testing and development, the docker setup can be used with `docker compose up --build`.
-
-### Local dev with DDEV (alternative to docker compose)
-
-Use DDEV if you want an all-in-one local stack without touching your host PHP/Node toolchain (Docker Desktop/WSL2/macOS/Linux supported).
-
-1. Install [DDEV](https://ddev.readthedocs.io/en/stable/) and Docker, then `ddev start` in the repo.
-2. First run will install npm deps and run `npm run build` automatically; rerun manually with `ddev build` if needed.
-3. Access the app at http://photobooth.ddev.site:9080 (HTTPS https://photobooth.ddev.site:9443).
-4. Commands inside the web container: `ddev composer <cmd>` for PHP tools, `ddev npm <cmd>` for JS, `ddev qa` (composer cgl+lint+phpstan+phpunit), `ddev pre-commit` (eslint + full build + QA).
-5. Helpers: GET request helper auto-starts on port 9100 (`ddev getserver` to restart); asset watcher auto-starts (`ddev npm run watch:gulp` / `watch:lint` to run manually).
-
-Notes:
-
-- Matches the docker compose image (PHP 8.4, Apache, Node 20).
-- If DDEV isn’t installed, continue using `docker compose up --build` as documented above.
-- Quick validation: after `ddev start`, open the site URL, take a test photo, check gallery/slideshow, and run `ddev qa`; if assets look stale, run `ddev build`.
-
-### :mag: Changelog
-
-Please take a look at the changelog available on [https://photoboothproject.github.io](https://photoboothproject.github.io).
-
-### :warning: Security advice
-
-Photobooth is not hardened against any kind of _targeted_ attacks.
-It uses user defined commands for tasks like taking photos and is allowed to replace its own files for easy updating.
-Because of this it's not advised to operate Photobooth in an untrusted network and
-**you should absolutely not make Photobooth accessible through the internet without heavy modifications!**
-
-### :copyright: License
-
-Photobooth source is licensed under the MIT license.
-
-Once build, Photobooth incorporates several parts and optimizations that are covered by a different license which could apply to Photobooth as well.
-All dependencies include their respective LICENSE files.
-
-### :tada: Donation
-
-If you like our work and consider a donation, we have to tell you that we don't accept any money. We're happy about every contribution to this project and strive to make it better every day. Just get in touch with us on [Telegram](https://t.me/PhotoboothGroup) to say thank you or help us find ways to improve.
-
-If you still want to donate money to make us happy: consider a donation to the [seal station Norddeich](https://seehundstation-norddeich.de) ([donate via Paypal](https://paypal.me/seehundstation)) or to the [DKMS](https://www.dkms.de/) ([donate via Paypal](https://www.paypal.com/DE/fundraiser/charity/3847251)) to provide blood cancer patients with a second chance at life.
-
-Thanks for reading!
-
-### :mortar_board: Tutorial
-
-[Raspberry Pi Weddingphotobooth (german)](https://www.andrerinas.de/tutorials/raspberry-pi-einen-dslr-weddingphotobooth-erstellen.html)
-[Raspberry Pi Fotobox für Hochzeiten und Geburtstage (German)](https://www.dennis-henss.de/2020/01/25/raspberry-pi-fotobox-fuer-hochzeiten-und-geburtstage)
-[Raspberry Pi Photobooth in a classic vintage plate camera](https://florianmuller.com/raspberry-pi-photobooth-in-a-classic-vintage-plate-camera)
-
-### :clap: Contributors and thanks to
-
--   [dimsemenov](https://github.com/dimsemenov/photoswipe)
--   [t0k4rt](https://github.com/t0k4rt/phpqrcode)
--   [nihilor](https://github.com/nihilor/photobooth)
--   [vrs01](https://github.com/vrs01)
--   [F4bsi](https://github.com/F4bsi)
--   [got-x](https://github.com/got-x)
--   [RaphaelKunis](https://github.com/RaphaelKunis)
--   [andi34](https://github.com/andi34)
--   [Norman-Sch](https://github.com/Norman-Sch)
--   [marcogracklauer](https://github.com/marcogracklauer)
--   [dnks23](https://github.com/dnks23)
--   [tobiashaas](https://github.com/tobiashaas)
--   Martin Kaiser-Kaplaner
--   [MoJou90](https://github.com/MoJou90)
--   [Reinhard Reberning](https://www.reinhard-rebernig.at/website/websites/fotokasterl)
--   [Steffen Musch](https://github.com/Nie-Oh)
--   [flighter18](https://github.com/flighter18)
--   [thymon13](https://github.com/thymon13)
--   [vdubuk](https://github.com/vdubuk)
--   [msmedien](https://github.com/msmedien)
--   [sualko](https://github.com/sualko)
--   [rawbertp](https://github.com/rawbertp)
--   [jacques42](https://github.com/jacques42)
--   [poldixd](https://github.com/poldixd)
--   [TheVaan](https://github.com/TheVaan)
--   [Andreas Remdt](https://andreasremdt.com)
--   [philippselle](https://github.com/philippselle)
--   [Natalie Stroud](https://github.com/stroudn1)
--   [jarettrude](https://github.com/jarettrude)
--   [alzo425](https://github.com/alzo425)
--   [KH404](https://github.com/KH404)
--   [joiyco](https://github.com/joiyco)
--   [EccoB](https://github.com/EccoB)
--   [couz74](https://github.com/couz74)
--   [thatonedude3470](https://github.com/thatonedude3470)
--   [Christian Tarne](https://github.com/Metropo)
--   [DeNeD1](https://github.com/DeNeD1)
--   [DIY89](https://github.com/DIY89)
--   [mhellmeier](https://github.com/mhellmeier)
--   [Uwe Pieper](https://github.com/up-87)
--   [s-dinda](https://github.com/s-dinda)
--   [Moarqi](https://github.com/Moarqi)
--   [kreativmonkey](https://github.com/kreativmonkey)
--   [Khaos66](https://github.com/Khaos66)
--   [DJ DT-Sommer](https://dt-sommer.jimdofree.com)
--   [ledsi](https://github.com/ledsi)
--   [vucubcaquix](https://github.com/vucubcaquix)
--   [Spike-78](https://github.com/Spike-78)
--   [Mathias Fiege](https://www.webpension.de/)
--   [Guillaume Roure](https://github.com/Ippephyx)
--   [Francesco Miccolis](https://github.com/fmiccolis)
+*(Note: For camera functionality to work in modern web browsers, the application must be accessed via `http://localhost` or a secure `https://` origin).*

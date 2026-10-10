@@ -31,16 +31,6 @@ include PathUtility::getAbsolutePath('admin/helper/index.php');
                     <div>
                         <p>OpenSource Photobooth web interface for Linux and Windows.</p>
                         <p></p>
-                        <p>Photobooth was initally developped by Andre Rinas especially to run on a Raspberry Pi.<br>
-                        In 2019 Andreas Blaesius picked up the work and continued to work on the source.</p>
-                        <p class="mt-2">
-                            With the help of the community Photobooth grew to a powerfull Photobooth software with a lot of features and possibilities.
-                            By a lot of features, we mean a lot (!!!) and you might have some questions - now or later. You can find a lot of useful information
-                            <a class="underline hover:text-brand-1" href="https://photoboothproject.github.io" target="_blank" rel="noopener noreferrer">https://photoboothproject.github.io</a>
-                            or at the
-                            <a class="underline hover:text-brand-1" href="https://t.me/PhotoboothGroup" target="_blank" rel="noopener noreferrer">Telegram group</a>.
-                        </p>
-                        </p>
                         <h3 class="text-brand-1 font-bold mb-2 mt-4">Here are some basic information for you:</h3>
                         <p class="mb-2">
                             <b class="flex mb-1">Location of your Photobooth installation:</b>
@@ -75,11 +65,6 @@ include PathUtility::getAbsolutePath('admin/helper/index.php');
                         <p class="mt-1">
                             An integrated FAQ to answer a lot of questions can be found at
                             <code class="break-all"><a class="hover:text-brand-1" href="<?=PathUtility::getPublicPath('faq');?>" target="_blank" rel="noopener noreferrer"><?=PathUtility::getPublicPath('faq');?></a></code>.
-                        </p>
-                        <p class="mt-4">
-                            You are missing some translation or your language isn't supported yet?
-                            Don't worry! You can request new language support at <a class="underline hover:text-brand-1" href="https://github.com/PhotoboothProject/photobooth/issues" target="_blank" rel="noopener noreferrer">GitHub</a>,
-                            you can translate Photobooth at <a class="underline hover:text-brand-1" href="https://crowdin.com/project/photobooth" target="_blank" rel="noopener noreferrer">Crowdin</a>.
                         </p>
                     </div>
 
