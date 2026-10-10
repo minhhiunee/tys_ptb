@@ -81,7 +81,7 @@
     "@babel/preset-env": "^7.29.3",
     "@eslint/eslintrc": "^3.3.5",
     "@eslint/js": "^10.0.1",
-    "archiver": "^7.0.1",
+    "archiver": "^8.0.0",
     "colors": "^1.4.0",
     "eslint-plugin-n": "^18.2.2",
     "git-tag-version": "^1.4.0",
