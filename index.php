@@ -100,6 +100,7 @@ if ($config['ui']['selfie_mode']) {
 <script src="<?=$assetService->getUrl('resources/js/virtualKeyboard.js')?>"></script>
     <script src="<?=$assetService->getUrl('resources/js/screensaver.js')?>"></script>
     <script src="<?=$assetService->getUrl('resources/js/core.js')?>"></script>
+    <script src="<?=$assetService->getUrl('resources/js/presets-ui.js')?>"></script>
 
 <?php include PathUtility::getAbsolutePath('template/components/start.adminshortcut.php'); ?>
 <?php ProcessService::getInstance()->boot(); ?>

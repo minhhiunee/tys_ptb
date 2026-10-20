@@ -59,6 +59,9 @@ try {
     } elseif (!empty($_POST['filter'])) {
         $vars['imageFilter'] = ImageFilterEnum::tryFrom($_POST['filter']);
     }
+
+    $vars['preset'] = !empty($_POST['preset']) ? (string) $_POST['preset'] : null;
+    $vars['preset_amount'] = isset($_POST['preset_amount']) ? (int) $_POST['preset_amount'] : 100;
 } catch (\Exception $e) {
     // Handle the exception
     $logger->error($e->getMessage(), $_POST);
@@ -146,13 +149,40 @@ try {
                     $vars['imageFilter'] = ImageFilterEnum::PLAIN;
                 } else {
                     $logger->error('Lightroom mode: Timeout waiting for exported file.');
+                    if (!empty($vars['preset'])) {
+                        $logger->info('Falling back to local PresetService for: ' . $vars['preset']);
+                        \Photobooth\Service\PresetService::getInstance()->applyPreset(
+                            $vars['tmpFile'],
+                            $vars['tmpFile'],
+                            $vars['preset'],
+                            $vars['preset_amount'] ?? 100
+                        );
+                    }
                 }
             } else {
                 $logger->error('Lightroom mode: Failed to copy to import folder.');
+                if (!empty($vars['preset'])) {
+                    \Photobooth\Service\PresetService::getInstance()->applyPreset(
+                        $vars['tmpFile'],
+                        $vars['tmpFile'],
+                        $vars['preset'],
+                        $vars['preset_amount'] ?? 100
+                    );
+                }
             }
+        } elseif (!empty($vars['preset'])) {
+            // Local-first preset processing (Instant <0.3s)
+            $logger->debug('Applying local preset: ' . $vars['preset'] . ' with amount ' . ($vars['preset_amount'] ?? 100));
+            \Photobooth\Service\PresetService::getInstance()->applyPreset(
+                $vars['tmpFile'],
+                $vars['tmpFile'],
+                $vars['preset'],
+                $vars['preset_amount'] ?? 100
+            );
         }
 
         if (!file_exists($vars['tmpFile'])) {
+
             throw new \Exception('Image doesn\'t exist.');
         }
 

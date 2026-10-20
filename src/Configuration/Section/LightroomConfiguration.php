@@ -30,7 +30,17 @@ class LightroomConfiguration
                         })
                     ->end()
                 ->end()
+                ->scalarNode('executable_path')
+
+                    ->defaultValue('D:\\Adobe\\Lightroom 2024\\Adobe Lightroom Classic\\Lightroom.exe')
+                    ->info('Path to Lightroom Classic executable on the host system.')
+                ->end()
+                ->scalarNode('preset_folder')
+                    ->defaultValue('TYS TEST')
+                    ->info('Lightroom preset group/folder name.')
+                ->end()
             ->end();
+
 
         return $node;
     }

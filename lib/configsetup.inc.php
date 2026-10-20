@@ -3884,7 +3884,21 @@ return [
             'type' => 'number',
             'placeholder' => 60,
             'name' => 'lightroom[poll_timeout]',
-            'value' => $config['lightroom']['poll_timeout'],
+            'value' => $config['lightroom']['poll_timeout'] ?? 60,
+        ],
+        'lightroom_executable_path' => [
+            'view' => 'advanced',
+            'type' => 'input',
+            'placeholder' => 'D:\\Adobe\\Lightroom 2024\\Adobe Lightroom Classic\\Lightroom.exe',
+            'name' => 'lightroom[executable_path]',
+            'value' => $config['lightroom']['executable_path'] ?? 'D:\\Adobe\\Lightroom 2024\\Adobe Lightroom Classic\\Lightroom.exe',
+        ],
+        'lightroom_preset_folder' => [
+            'view' => 'advanced',
+            'type' => 'input',
+            'placeholder' => 'TYS TEST',
+            'name' => 'lightroom[preset_folder]',
+            'value' => $config['lightroom']['preset_folder'] ?? 'TYS TEST',
         ],
     ],
     'reset' => [

@@ -49,4 +49,8 @@ if ($config['picture']['allow_delete']) {
 
 echo '</div>';
 echo '</div>';
+
+include \Photobooth\Utility\PathUtility::getAbsolutePath('template/components/preset.control.php');
+
 echo '</div>';
+
