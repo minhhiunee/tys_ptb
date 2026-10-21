@@ -8,7 +8,7 @@ $presetService = PresetService::getInstance();
 $presets = $presetService->getEnabledPresets();
 ?>
 
-<div id="desktop-preset-bar" class="desktop-preset-bar hidden">
+<div id="desktop-preset-bar" class="desktop-preset-bar">
     <div class="preset-bar-inner">
         <!-- Preset Selector Buttons -->
         <div class="preset-group">
@@ -41,27 +41,32 @@ $presets = $presetService->getEnabledPresets();
 
 <style>
 .desktop-preset-bar {
-    position: absolute;
-    bottom: 90px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 100;
+    display: none;
+    justify-content: center;
+    width: 100%;
+    margin-bottom: 5.5rem;
     pointer-events: auto;
+    z-index: 50;
     transition: opacity 0.25s ease, transform 0.25s ease;
 }
-.desktop-preset-bar.hidden {
+.stage[data-stage="result"].stage--active .desktop-preset-bar {
+    display: flex !important;
+}
+.stage[data-stage="result"]:not(.stage--active) .desktop-preset-bar {
     display: none !important;
 }
 .preset-bar-inner {
+
     display: flex;
     align-items: center;
     gap: 16px;
-    background: rgba(18, 24, 38, 0.88);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(18, 24, 38, 0.92);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 40px;
-    padding: 8px 20px;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 1px 1px rgba(255, 255, 255, 0.1);
+    padding: 8px 22px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(255, 255, 255, 0.15);
     color: #f1f5f9;
     font-family: inherit;
     font-size: 14px;
@@ -69,7 +74,7 @@ $presets = $presetService->getEnabledPresets();
 .preset-group {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
 }
 .preset-group-label {
     font-weight: 600;
@@ -81,8 +86,8 @@ $presets = $presetService->getEnabledPresets();
     gap: 6px;
 }
 .preset-btn {
-    background: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.16);
     color: #e2e8f0;
     padding: 6px 14px;
     border-radius: 20px;
@@ -93,8 +98,8 @@ $presets = $presetService->getEnabledPresets();
     user-select: none;
 }
 .preset-btn:hover {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.35);
     color: #ffffff;
     transform: translateY(-1px);
 }
@@ -102,29 +107,29 @@ $presets = $presetService->getEnabledPresets();
     background: linear-gradient(135deg, #0ea5e9, #2563eb);
     border-color: #38bdf8;
     color: #ffffff;
-    box-shadow: 0 2px 10px rgba(14, 165, 233, 0.4);
+    box-shadow: 0 2px 10px rgba(14, 165, 233, 0.5);
     font-weight: 600;
 }
 .preset-amount-container {
     display: flex;
     align-items: center;
     gap: 10px;
-    border-left: 1px solid rgba(255, 255, 255, 0.12);
-    border-right: 1px solid rgba(255, 255, 255, 0.12);
-    padding: 0 14px;
+    border-left: 1px solid rgba(255, 255, 255, 0.15);
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 0 16px;
 }
 .preset-amount-label {
     font-size: 12px;
     font-weight: 600;
     color: #cbd5e1;
-    min-width: 85px;
+    min-width: 90px;
 }
 .preset-slider {
     -webkit-appearance: none;
     appearance: none;
-    width: 110px;
+    width: 120px;
     height: 6px;
-    background: rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.25);
     border-radius: 3px;
     outline: none;
     cursor: pointer;
@@ -149,13 +154,13 @@ $presets = $presetService->getEnabledPresets();
 .preset-compare-container {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 .compare-btn {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
     color: #e2e8f0;
-    padding: 6px 12px;
+    padding: 6px 14px;
     border-radius: 20px;
     font-size: 12px;
     font-weight: 500;
@@ -180,11 +185,11 @@ $presets = $presetService->getEnabledPresets();
     font-size: 11px;
     padding: 3px 8px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.1);
     color: #94a3b8;
 }
 .preset-status-pill.loading {
-    background: rgba(14, 165, 233, 0.2);
+    background: rgba(14, 165, 233, 0.25);
     color: #38bdf8;
 }
 </style>

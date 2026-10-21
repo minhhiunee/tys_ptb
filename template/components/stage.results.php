@@ -4,7 +4,11 @@ use Photobooth\Utility\ComponentUtility;
 
 echo '<div class="stage stage--result rotarygroup" data-stage="result">';
 echo '<div class="stage-inner">';
+
+include \Photobooth\Utility\PathUtility::getAbsolutePath('template/components/preset.control.php');
+
 echo '<div class="buttonbar buttonbar--bottom">';
+
 
 if ($config['button']['homescreen']) {
     echo ComponentUtility::renderButton('home', $config['icons']['home'], 'homebtn');
@@ -49,8 +53,6 @@ if ($config['picture']['allow_delete']) {
 
 echo '</div>';
 echo '</div>';
-
-include \Photobooth\Utility\PathUtility::getAbsolutePath('template/components/preset.control.php');
-
 echo '</div>';
+
 

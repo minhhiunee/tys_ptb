@@ -29,9 +29,25 @@
         }
     }
 
-    function initPresetBarForImage(filename) {
-        if (!filename) return;
-        currentFilename = filename;
+    function extractFilename() {
+        let fn = $resultPage.attr('data-img');
+        if (!fn && typeof api !== 'undefined' && api.filename) {
+            fn = api.filename;
+        }
+        if (!fn) {
+            // Try extracting from --stage-background-image
+            const rawStyle = $resultPage.css('--stage-background-image') || '';
+            const match = rawStyle.match(/url\(["']?([^"')?#]+)[^"')]*["']?\)/);
+            if (match && match[1]) {
+                const parts = match[1].split('/');
+                fn = parts[parts.length - 1];
+            }
+        }
+        return fn || '';
+    }
+
+    function initPresetBarForImage() {
+        currentFilename = extractFilename();
         currentPreset = 'original';
         currentAmount = 100;
         $amountSlider.val(100);
@@ -40,14 +56,15 @@
         $('.preset-btn').removeClass('active');
         $('.preset-btn[data-preset="original"]').addClass('active');
 
-        // Capture initial image URL
+        // Capture initial original image URL from CSS
         const rawStyle = $resultPage.css('--stage-background-image') || '';
         const match = rawStyle.match(/url\(["']?([^"')]+)["']?\)/);
         if (match && match[1]) {
             originalImageUrl = match[1];
             currentProcessedUrl = originalImageUrl;
-        } else {
-            originalImageUrl = (environment.publicFolders.images || 'data/images') + '/' + filename;
+        } else if (currentFilename) {
+            const baseDir = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.images) ? environment.publicFolders.images : 'data/images';
+            originalImageUrl = baseDir + '/' + currentFilename;
             currentProcessedUrl = originalImageUrl;
         }
 
@@ -56,7 +73,13 @@
     }
 
     function applyPresetPreview(presetId, amount) {
-        if (!currentFilename) return;
+        if (!currentFilename) {
+            currentFilename = extractFilename();
+        }
+        if (!currentFilename) {
+            console.warn('Cannot apply preset: filename not detected');
+            return;
+        }
 
         currentPreset = presetId;
         currentAmount = amount;
@@ -65,6 +88,7 @@
             $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
             currentProcessedUrl = originalImageUrl;
             setStatus('Original', false);
+            scheduleBake('original', 100);
             return;
         }
 
@@ -82,9 +106,13 @@
             postData[csrf.key] = csrf.token;
         }
 
+        const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/presets.php'
+            : 'api/presets.php';
+
         $.ajax({
             method: 'POST',
-            url: (environment.publicFolders.api || 'api') + '/presets.php',
+            url: apiEndpoint,
             data: postData,
             dataType: 'json'
         })
@@ -95,6 +123,7 @@
                     $resultPage.css('--stage-background-image', `url(${data.url})`);
                 }
                 setStatus('Applied', false);
+                scheduleBake(presetId, amount);
             } else {
                 setStatus('Failed', false);
             }
@@ -103,6 +132,37 @@
             console.error('Preset preview error:', err);
             setStatus('Error', false);
         });
+    }
+
+    let bakeTimer = null;
+    function scheduleBake(presetId, amount) {
+        clearTimeout(bakeTimer);
+        bakeTimer = setTimeout(function () {
+            if (!currentFilename) return;
+            const postData = {
+                action: 'apply',
+                file: currentFilename,
+                preset: presetId,
+                amount: amount,
+                preview: 0
+            };
+            if (typeof csrf !== 'undefined' && csrf.key) {
+                postData[csrf.key] = csrf.token;
+            }
+            const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+                ? environment.publicFolders.api + '/presets.php'
+                : 'api/presets.php';
+            $.ajax({
+                method: 'POST',
+                url: apiEndpoint,
+                data: postData,
+                dataType: 'json'
+            }).done(function (data) {
+                if (data && data.success) {
+                    console.log('Preset permanently saved to image:', currentFilename, presetId, amount);
+                }
+            });
+        }, 350);
     }
 
     // Preset button click (Mouse)
@@ -145,7 +205,7 @@
 
     // Keyboard Shortcuts (1, 2, 3 and \)
     $(document).on('keydown', function (e) {
-        if (!$resultPage.hasClass('stage--active') || $presetBar.hasClass('hidden')) {
+        if (!$resultPage.hasClass('stage--active')) {
             return;
         }
 
@@ -175,22 +235,24 @@
         }
     });
 
-    // Watch for result stage activation
+    // Watch for result stage activation and image changes
     const observer = new MutationObserver(function (mutations) {
         mutations.forEach(function (mutation) {
-            if (mutation.attributeName === 'class') {
-                const isActive = $resultPage.hasClass('stage--active');
-                if (isActive) {
-                    const filename = $resultPage.attr('data-img') || (typeof api !== 'undefined' ? api.filename : '');
-                    initPresetBarForImage(filename);
-                } else {
-                    $presetBar.addClass('hidden');
+            if (mutation.attributeName === 'class' || mutation.attributeName === 'data-img') {
+                if ($resultPage.hasClass('stage--active')) {
+                    initPresetBarForImage();
                 }
             }
         });
     });
 
-    if ($resultPage.length) {
-        observer.observe($resultPage[0], { attributes: true });
-    }
+    $(document).ready(function () {
+        if ($resultPage.length) {
+            observer.observe($resultPage[0], { attributes: true, attributeFilter: ['class', 'data-img'] });
+            if ($resultPage.hasClass('stage--active')) {
+                initPresetBarForImage();
+            }
+        }
+    });
+
 })(jQuery);

@@ -19,4 +19,5 @@ services:
       - ./lib:/app/lib
       - ./resources:/app/resources
       - ./PresetColor:/app/PresetColor
+      - ./index.php:/app/index.php
 
