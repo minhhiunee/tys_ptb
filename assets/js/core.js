@@ -746,21 +746,53 @@ const photoBooth = (function () {
                                 }
                             }, continuousCollageTime);
                         } else {
-                            // collage with interruption
-                            if (result.current + 1 < api.collageLimit) {
+                            // collage with interruption (per-photo review & confirm)
+                            const currentIdx = result.current + 1;
+                            const totalLimit = api.collageLimit;
+                            const isLastShot = currentIdx >= totalLimit;
+
+                            loaderMessage.html(
+                                '<div style="background:rgba(15,23,42,0.85); backdrop-filter:blur(10px); padding:8px 22px; border-radius:30px; display:inline-block; margin-bottom:12px; color:#ffffff; font-weight:700; font-size:15px; border:1px solid rgba(255,255,255,0.2); box-shadow:0 6px 20px rgba(0,0,0,0.4);">' +
+                                    '<i class="fa fa-camera" style="margin-right:6px; color:#38bdf8;"></i> Kiểu ' +
+                                    currentIdx +
+                                    ' / ' +
+                                    totalLimit +
+                                    ': Xem lại ảnh vừa chụp</div>'
+                            );
+
+                            loaderButtonBar.empty().css({
+                                display: 'flex',
+                                'justify-content': 'center',
+                                'align-items': 'center',
+                                gap: '14px',
+                                'flex-wrap': 'wrap',
+                                'margin-top': '10px'
+                            });
+
+                            // 1. Nút Chụp lại bức này (Retake this shot)
+                            const retakeButton = $(
+                                '<button type="button" class="btn-review-pill btn-review-retake rotaryfocus">'
+                            );
+                            retakeButton.append('<i class="fa fa-refresh"></i> <span>Chụp lại bức này</span>');
+                            retakeButton.appendTo(loaderButtonBar).on('click', (event) => {
+                                event.stopPropagation();
+                                event.preventDefault();
+                                imageUrl = '';
+                                loaderMessage.html('<div style="color:#f8fafc; font-weight:600;"><i class="fa fa-spinner fa-spin"></i> Đang chuẩn bị chụp lại kiểu ' + currentIdx + '...</div>');
+                                api.deleteImage(result.collage_file, () => {
+                                    setTimeout(function () {
+                                        api.nextCollageNumber = result.current;
+                                        api.thrill(PhotoStyle.COLLAGE);
+                                    }, 400);
+                                });
+                            });
+
+                            // 2. Nút Xác nhận lấy ảnh (Confirm / Next or Process)
+                            if (!isLastShot) {
                                 const takePictureButton = $(
-                                    '<button type="button" class="button collageNext rotaryfocus" id="btnCollageNext">'
+                                    '<button type="button" class="btn-review-pill btn-review-confirm-next rotaryfocus" id="btnCollageNext">'
                                 );
-                                takePictureButton.append(
-                                    '<span class="button--icon"><i class="' +
-                                        config.icons.take_picture +
-                                        '"></i></span>'
-                                );
-                                takePictureButton.append(
-                                    '<span class="button--label">' +
-                                        photoboothTools.getTranslation('nextPhoto') +
-                                        '</span>'
-                                );
+                                takePictureButton.append('<i class="fa fa-check-circle"></i> <span>Xác nhận lấy ảnh (Chụp tiếp)</span>');
                                 takePictureButton.appendTo(loaderButtonBar).on('click', (event) => {
                                     event.stopPropagation();
                                     event.preventDefault();
@@ -770,16 +802,9 @@ const photoBooth = (function () {
                                 remoteBuzzerClient.collageWaitForNext();
                             } else {
                                 const collageProcessButton = $(
-                                    '<button type="button" class="button collageProcess rotaryfocus" id="btnCollageProcess">'
+                                    '<button type="button" class="btn-review-pill btn-review-confirm-process rotaryfocus" id="btnCollageProcess">'
                                 );
-                                collageProcessButton.append(
-                                    '<span class="button--icon"><i class="' + config.icons.save + '"></i></span>'
-                                );
-                                collageProcessButton.append(
-                                    '<span class="button--label">' +
-                                        photoboothTools.getTranslation('processPhoto') +
-                                        '</span>'
-                                );
+                                collageProcessButton.append('<i class="fa fa-magic"></i> <span>Xác nhận & Lồng vào Frame</span>');
                                 collageProcessButton.appendTo(loaderButtonBar).on('click', (event) => {
                                     event.stopPropagation();
                                     event.preventDefault();
@@ -791,34 +816,11 @@ const photoBooth = (function () {
                                 remoteBuzzerClient.collageWaitForProcessing();
                             }
 
-                            const retakeButton = $('<button type="button" class="button collageRetake rotaryfocus">');
-                            retakeButton.append(
-                                '<span class="button--icon"><i class="' + config.icons.refresh + '"></i></span>'
+                            // 3. Nút Hủy bỏ (Abort)
+                            const abortButton = $(
+                                '<button type="button" class="btn-review-pill btn-review-abort rotaryfocus">'
                             );
-                            retakeButton.append(
-                                '<span class="button--label">' +
-                                    photoboothTools.getTranslation('retakePhoto') +
-                                    '</span>'
-                            );
-                            retakeButton.appendTo(loaderButtonBar).on('click', (event) => {
-                                event.stopPropagation();
-                                event.preventDefault();
-                                imageUrl = '';
-                                api.deleteImage(result.collage_file, () => {
-                                    setTimeout(function () {
-                                        api.nextCollageNumber = result.current;
-                                        api.thrill(PhotoStyle.COLLAGE);
-                                    }, notificationTimeout);
-                                });
-                            });
-
-                            const abortButton = $('<button type="button" class="button collageAbort rotaryfocus">');
-                            abortButton.append(
-                                '<span class="button--icon"><i class="' + config.icons.delete + '"></i></span>'
-                            );
-                            abortButton.append(
-                                '<span class="button--label">' + photoboothTools.getTranslation('abort') + '</span>'
-                            );
+                            abortButton.append('<i class="fa fa-times"></i> <span>Hủy bỏ</span>');
                             abortButton.appendTo(loaderButtonBar).on('click', () => {
                                 location.assign('./');
                             });

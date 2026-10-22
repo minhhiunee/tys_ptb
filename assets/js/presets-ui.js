@@ -256,6 +256,107 @@
         });
     });
 
+    // Retake button on Result Screen
+    $(document).on('click', '#btn-preset-retake', function (e) {
+        e.preventDefault();
+        keepAlive();
+        if (confirm('Bạn muốn chụp lại lượt chụp này?')) {
+            if (typeof photoBooth !== 'undefined') {
+                photoBooth.reset();
+                if (photoBooth.collageLayout) {
+                    photoBooth.thrill('collage');
+                } else {
+                    photoBooth.thrill('photo');
+                }
+            } else {
+                location.assign('./');
+            }
+        }
+    });
+
+    function forceBakeNow(presetId, amount, callback) {
+        clearTimeout(bakeTimer);
+        if (!currentFilename || !presetId || presetId === 'original') {
+            if (typeof callback === 'function') callback();
+            return;
+        }
+        setStatus('Saving...', true);
+        const postData = {
+            action: 'apply',
+            file: currentFilename,
+            preset: presetId,
+            amount: amount,
+            preview: 0
+        };
+        if (typeof csrf !== 'undefined' && csrf.key) {
+            postData[csrf.key] = csrf.token;
+        }
+        const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/presets.php'
+            : 'api/presets.php';
+        $.ajax({
+            method: 'POST',
+            url: apiEndpoint,
+            data: postData,
+            dataType: 'json'
+        }).always(function () {
+            setStatus('Ready', false);
+            if (typeof callback === 'function') callback();
+        });
+    }
+
+    // Confirm button on Result Screen
+    $(document).on('click', '#btn-preset-confirm', function (e) {
+        e.preventDefault();
+        keepAlive();
+        const $btn = $(this);
+        $btn.css('opacity', '0.7').prop('disabled', true);
+        forceBakeNow(currentPreset, currentAmount, function () {
+            $btn.css('opacity', '1').prop('disabled', false);
+            $('#confirmSuccessModal').removeClass('hidden').attr('aria-hidden', 'false');
+        });
+    });
+
+    // Confirmation Modal actions
+    $(document).on('click', '#modal-btn-print', function (e) {
+        e.preventDefault();
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+        const $btn = $('[data-command="printbtn"], .printbtn');
+        if ($btn.length) {
+            $btn.trigger('click');
+        } else {
+            window.print();
+        }
+    });
+
+    $(document).on('click', '#modal-btn-qr', function (e) {
+        e.preventDefault();
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+        const $btn = $('[data-command="qrbtn"], .qrbtn');
+        if ($btn.length) {
+            $btn.trigger('click');
+        }
+    });
+
+    $(document).on('click', '#modal-btn-gallery', function (e) {
+        e.preventDefault();
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+        const $btn = $('[data-command="gallerybtn"], .gallerybtn');
+        if ($btn.length) {
+            $btn.trigger('click');
+        }
+    });
+
+    $(document).on('click', '#modal-btn-home', function (e) {
+        e.preventDefault();
+        window.location.assign('./');
+    });
+
+    $(document).on('click', '#modal-btn-close, .confirm-modal-backdrop', function (e) {
+        e.preventDefault();
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+    });
+
     $(document).ready(function () {
         if ($resultPage.length) {
             observer.observe($resultPage[0], { attributes: true, attributeFilter: ['class', 'data-img'] });

@@ -36,6 +36,62 @@ $presets = $presetService->getEnabledPresets();
             </button>
             <span id="preset-status" class="preset-status-pill">Ready</span>
         </div>
+
+        <!-- Action Buttons: Retake & Confirm -->
+        <div class="preset-actions-container">
+            <button type="button" id="btn-preset-retake" class="preset-action-btn btn-retake" title="Chụp lại từ đầu nếu chưa ưng ý">
+                <i class="fa fa-refresh"></i> <span>Chụp lại</span>
+            </button>
+            <button type="button" id="btn-preset-confirm" class="preset-action-btn btn-confirm" title="Xác nhận ảnh ưng ý và hoàn tất lồng khung">
+                <i class="fa fa-check-circle"></i> <span>Xác nhận lấy ảnh</span>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Confirmation Success Modal -->
+<div id="confirmSuccessModal" class="confirm-modal hidden" aria-hidden="true">
+    <div class="confirm-modal-backdrop"></div>
+    <div class="confirm-modal-card">
+        <div class="confirm-modal-icon">
+            <i class="fa fa-check-circle"></i>
+        </div>
+        <h2 class="confirm-modal-title">Ảnh Đã Được Lồng Khung Thành Công!</h2>
+        <p class="confirm-modal-desc">Ảnh của bạn đã được áp dụng preset và ghép vào khung frame hoàn chỉnh. Hãy chọn thao tác bạn muốn thực hiện tiếp theo:</p>
+        
+        <div class="confirm-modal-buttons">
+            <button type="button" class="confirm-action-btn btn-print-now" id="modal-btn-print">
+                <span class="btn-icon" style="color:#2563eb; font-size:22px;"><i class="fa fa-print"></i></span>
+                <span class="btn-text">
+                    <strong style="display:block; font-size:14px; color:#0f172a;">In Ảnh Ngay</strong>
+                    <small style="color:#64748b; font-size:11px;">In trực tiếp ra máy in</small>
+                </span>
+            </button>
+            <button type="button" class="confirm-action-btn btn-qr-now" id="modal-btn-qr">
+                <span class="btn-icon" style="color:#7c3aed; font-size:22px;"><i class="fa fa-qrcode"></i></span>
+                <span class="btn-text">
+                    <strong style="display:block; font-size:14px; color:#0f172a;">Quét Mã QR</strong>
+                    <small style="color:#64748b; font-size:11px;">Tải ảnh về điện thoại</small>
+                </span>
+            </button>
+            <button type="button" class="confirm-action-btn btn-gallery-now" id="modal-btn-gallery">
+                <span class="btn-icon" style="color:#0284c7; font-size:22px;"><i class="fa fa-picture-o"></i></span>
+                <span class="btn-text">
+                    <strong style="display:block; font-size:14px; color:#0f172a;">Xem Gallery</strong>
+                    <small style="color:#64748b; font-size:11px;">Xem bộ sưu tập ảnh</small>
+                </span>
+            </button>
+            <button type="button" class="confirm-action-btn btn-home-now" id="modal-btn-home">
+                <span class="btn-icon" style="color:#10b981; font-size:22px;"><i class="fa fa-home"></i></span>
+                <span class="btn-text">
+                    <strong style="display:block; font-size:14px; color:#0f172a;">Chụp Lượt Mới</strong>
+                    <small style="color:#64748b; font-size:11px;">Về màn hình chính</small>
+                </span>
+            </button>
+        </div>
+        <button type="button" class="confirm-modal-close" id="modal-btn-close" title="Đóng để xem lại ảnh">
+            <i class="fa fa-times"></i> Đóng lại xem ảnh
+        </button>
     </div>
 </div>
 
@@ -56,20 +112,47 @@ $presets = $presetService->getEnabledPresets();
     display: none !important;
 }
 .preset-bar-inner {
-
     display: flex;
     align-items: center;
-    gap: 16px;
-    background: rgba(18, 24, 38, 0.92);
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 10px 14px;
+    max-width: 96vw;
+    background: rgba(18, 24, 38, 0.94);
     backdrop-filter: blur(14px);
     -webkit-backdrop-filter: blur(14px);
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 40px;
-    padding: 8px 22px;
+    padding: 8px 20px;
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6), 0 0 1px 1px rgba(255, 255, 255, 0.15);
     color: #f1f5f9;
     font-family: inherit;
     font-size: 14px;
+    box-sizing: border-box;
+}
+@media (max-width: 1024px) {
+    .desktop-preset-bar {
+        margin-bottom: 5.8rem;
+    }
+    .preset-bar-inner {
+        padding: 6px 14px;
+        gap: 8px 10px;
+        border-radius: 20px;
+    }
+    .preset-amount-container {
+        padding: 0 10px !important;
+    }
+    .preset-slider {
+        width: 80px !important;
+    }
+    .preset-btn {
+        padding: 5px 10px !important;
+        font-size: 12px !important;
+    }
+    .preset-action-btn {
+        padding: 6px 12px !important;
+        font-size: 12px !important;
+    }
 }
 .preset-group {
     display: flex;
@@ -191,5 +274,149 @@ $presets = $presetService->getEnabledPresets();
 .preset-status-pill.loading {
     background: rgba(14, 165, 233, 0.25);
     color: #38bdf8;
+}
+
+/* Preset Action Buttons (Retake & Confirm) */
+.preset-actions-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: 6px;
+    padding-left: 14px;
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
+}
+.preset-action-btn {
+    border: none;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 16px;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    user-select: none;
+}
+.preset-action-btn.btn-retake {
+    background: rgba(239, 68, 68, 0.18);
+    border: 1px solid rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+}
+.preset-action-btn.btn-retake:hover {
+    background: #ef4444;
+    border-color: #ef4444;
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+    transform: translateY(-1px);
+}
+.preset-action-btn.btn-confirm {
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.4);
+}
+.preset-action-btn.btn-confirm:hover {
+    background: linear-gradient(135deg, #34d399, #059669);
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.55);
+    transform: translateY(-1px);
+}
+
+/* Confirmation Success Modal */
+.confirm-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 999999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    pointer-events: auto;
+    transition: opacity 0.25s ease;
+}
+.confirm-modal.hidden {
+    display: none !important;
+    opacity: 0;
+    pointer-events: none;
+}
+.confirm-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.75);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.confirm-modal-card {
+    position: relative;
+    max-width: 540px;
+    width: 90%;
+    background: #ffffff;
+    border-radius: 28px;
+    padding: 34px 30px 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    text-align: center;
+    border: 1px solid #e2e8f0;
+    animation: confirmCardPop 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes confirmCardPop {
+    0% { transform: scale(0.92); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
+.confirm-modal-icon {
+    font-size: 54px;
+    color: #10b981;
+    line-height: 1;
+    margin-bottom: 12px;
+}
+.confirm-modal-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 8px;
+    letter-spacing: -0.02em;
+}
+.confirm-modal-desc {
+    font-size: 13.5px;
+    color: #64748b;
+    margin: 0 0 24px;
+    line-height: 1.5;
+}
+.confirm-modal-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+.confirm-action-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    border: 2px solid #e2e8f0;
+    background: #f8fafc;
+    color: #1e293b;
+    cursor: pointer;
+    text-align: left;
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.confirm-action-btn:hover {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(59, 130, 246, 0.16);
+}
+.confirm-modal-close {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 8px 16px;
+    border-radius: 8px;
+    transition: color 0.2s;
+}
+.confirm-modal-close:hover {
+    color: #334155;
 }
 </style>
