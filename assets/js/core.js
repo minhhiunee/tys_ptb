@@ -1591,6 +1591,12 @@ const photoBooth = (function () {
 
     $('.takePic, .newpic').on('click', function (e) {
         e.preventDefault();
+        if (config.collage.enabled && config.collage.allow_selection && $('#collageSelectorModal').length) {
+            $('#collageSelectorModal').data('pending-start', true);
+            $('#collageSelectorModal').removeClass('hidden').attr('aria-hidden', 'false');
+            $(this).trigger('blur');
+            return;
+        }
         api.thrill(PhotoStyle.PHOTO);
         $(this).trigger('blur');
     });

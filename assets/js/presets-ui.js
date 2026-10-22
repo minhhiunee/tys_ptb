@@ -159,15 +159,24 @@
                 dataType: 'json'
             }).done(function (data) {
                 if (data && data.success) {
+                    setStatus('Ready', false);
                     console.log('Preset permanently saved to image:', currentFilename, presetId, amount);
                 }
             });
         }, 350);
     }
 
+    // Helper to keep photobooth result screen alive while interacting
+    function keepAlive() {
+        if (typeof photoBooth !== 'undefined' && photoBooth.resetTimeOut) {
+            photoBooth.resetTimeOut();
+        }
+    }
+
     // Preset button click (Mouse)
     $(document).on('click', '.preset-btn', function (e) {
         e.preventDefault();
+        keepAlive();
         const presetId = $(this).data('preset');
         $('.preset-btn').removeClass('active');
         $(this).addClass('active');
@@ -176,6 +185,7 @@
 
     // Amount slider (Mouse Drag & Input)
     $amountSlider.on('input', function () {
+        keepAlive();
         const val = $(this).val();
         $amountVal.text(val + '%');
         clearTimeout(debounceTimer);

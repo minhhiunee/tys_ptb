@@ -111,6 +111,32 @@ try {
         if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'postCollageProcessing')) {
             [$imageHandler, $vars, $config] = $processor->postCollageProcessing($imageHandler, $vars, $config);
         }
+
+        // Save original pristine collage and frame metadata
+        $origCollageTemp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
+        $origCollageFinal = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
+        @copy($vars['tmpFile'], $origCollageTemp);
+        @copy($vars['tmpFile'], $origCollageFinal);
+
+        $layoutConfigPath = Collage::getCollageConfigPath($config['collage']['layout'], $config['collage']['orientation'] ?? 'portrait');
+        $framePath = null;
+        if ($layoutConfigPath && file_exists($layoutConfigPath)) {
+            $layoutData = json_decode((string)file_get_contents($layoutConfigPath), true);
+            if (is_array($layoutData) && !empty($layoutData['frame'])) {
+                $framePath = $layoutData['frame'];
+            }
+        }
+
+        $metaData = [
+            'isCollage' => true,
+            'layout' => $config['collage']['layout'],
+            'orientation' => $config['collage']['orientation'] ?? 'portrait',
+            'frame' => $framePath,
+            'limit' => $config['collage']['limit'] ?? 1,
+            'created_at' => time()
+        ];
+        @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData));
+        @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData));
     }
 
     foreach ($vars['srcImages'] as $vars['singleImageFile']) {

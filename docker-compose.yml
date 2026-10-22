@@ -19,5 +19,6 @@ services:
       - ./lib:/app/lib
       - ./resources:/app/resources
       - ./PresetColor:/app/PresetColor
+      - ./Frame:/app/Frame
       - ./index.php:/app/index.php
 

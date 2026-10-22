@@ -6,6 +6,7 @@
 
 use Photobooth\Service\LanguageService;
 use Photobooth\Collage;
+use Photobooth\Utility\PathUtility;
 
 /**
  * Evaluate layout expression (e.g., "x*0.5" → 900 if x=1800)
@@ -212,10 +213,11 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
 
     $html = '<div id="collageSelector">';
     $html .= '<div class="modal hidden" id="collageSelectorModal" aria-hidden="true" role="dialog" aria-labelledby="collageSelectorTitle">';
-    $html .= '<div class="modal-inner">';
-    $html .= '<div class="modal-body">';
-    $html .= '<h3 id="collageSelectorTitle">' . $languageService->translate('selectCollageLayout') . '</h3>';
-    $html .= '<div class="collageSelector__options">';
+    $html .= '<div class="modal-inner" style="max-width: 960px; width: 92%;">';
+    $html .= '<div class="modal-body" style="padding: 24px 20px 10px;">';
+    $html .= '<h2 id="collageSelectorTitle" style="text-align:center; font-size:22px; font-weight:800; color:#0f172a; margin:0 0 6px; letter-spacing:-0.02em;">Chọn Khung Ảnh / Choose Frame</h2>';
+    $html .= '<p style="text-align:center; font-size:13px; color:#64748b; margin:0 0 20px;">Mỗi khung ảnh tương ứng số kiểu chụp và bố cục khác nhau</p>';
+    $html .= '<div class="collageSelector__options" style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; align-items:stretch;">';
 
     // Get orientation from config (landscape or portrait)
     $orientation = $collageConfig['orientation'] ?? 'landscape';
@@ -233,6 +235,13 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
         $layoutIds[] = $layoutId;
     }
 
+    $subtitles = [
+        1 => '1 ảnh chân dung',
+        2 => '2 ảnh xếp dọc',
+        3 => '3 ảnh photostrip 1:3',
+        4 => '4 ảnh lưới vuông 2x2',
+    ];
+
     foreach ($layoutIds as $layoutId) {
         $collageConfig['layout'] = $layoutId;
         $limitData = Collage::calculateLimit($collageConfig);
@@ -243,23 +252,45 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
             $label = $layoutData['name'];
         }
 
+        $subDesc = $subtitles[$limit] ?? sprintf('%d bức ảnh', $limit);
+
+        $previewHtml = '';
+        if (!empty($layoutData['frame'])) {
+            $frameUrl = htmlspecialchars(PathUtility::getPublicPath($layoutData['frame']), ENT_QUOTES);
+            $previewHtml = sprintf(
+                '<div class="frame-card-preview" style="position:relative; width:100%%; height:180px; display:flex; align-items:center; justify-content:center; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:12px; padding:10px; overflow:hidden;">' .
+                '<img src="%s" alt="%s" style="max-height:100%%; max-width:100%%; object-fit:contain; filter:drop-shadow(0 4px 10px rgba(0,0,0,0.15));" />' .
+                '<span class="frame-badge" style="position:absolute; top:8px; right:8px; background:linear-gradient(135deg, #0284c7, #2563eb); color:#ffffff; font-size:11px; font-weight:700; padding:3px 9px; border-radius:12px; box-shadow:0 2px 6px rgba(37,99,235,0.35);"><i class="fa fa-camera"></i> %d Ảnh</span>' .
+                '</div>',
+                $frameUrl,
+                htmlspecialchars($label, ENT_QUOTES),
+                $limit
+            );
+        } else {
+            $previewHtml = sprintf('<div class="collageSelector__preview-container">%s</div>', getLayoutPreviewSvg($layoutId, $orientation, $layoutData));
+        }
+
         $html .= sprintf(
-            '<button type="button" class="collageSelector__option cursor-pointer" data-layout="%s" data-limit="%d">' .
-            '<div class="collageSelector__preview-container">%s</div>' .
-            '<div class="collageSelector__label">%s</div>' .
+            '<button type="button" class="collageSelector__option cursor-pointer" data-layout="%s" data-limit="%d" style="min-width:180px; max-width:215px; flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; background:#ffffff; border:2px solid #e2e8f0; border-radius:16px; padding:12px; box-shadow:0 4px 12px rgba(0,0,0,0.06); transition:all 0.2s cubic-bezier(0.16,1,0.3,1); cursor:pointer;">' .
+            '%s' .
+            '<div style="width:100%%; text-align:center;">' .
+            '<div class="collageSelector__label" style="font-weight:700; font-size:13px; color:#0f172a; line-height:1.3; margin-bottom:2px;">%s</div>' .
+            '<div style="font-size:11px; color:#64748b; font-weight:500;">%s</div>' .
+            '</div>' .
             '</button>',
             htmlspecialchars($layoutId, ENT_QUOTES),
             $limit,
-            getLayoutPreviewSvg($layoutId, $orientation, $layoutData),
-            htmlspecialchars($label, ENT_QUOTES)
+            $previewHtml,
+            htmlspecialchars($label, ENT_QUOTES),
+            htmlspecialchars($subDesc, ENT_QUOTES)
         );
     }
 
     $html .= '</div>'; // .collageSelector__options
     $html .= '</div>'; // .modal-body
-    $html .= '<div class="modal-buttonbar">';
-    $html .= '<button type="button" class="modal-button" id="collageSelectorClose" data-modal-close>';
-    $html .= '<span class="modal-button--icon"><i class="fa fa-times"></i></span>';
+    $html .= '<div class="modal-buttonbar" style="padding:12px 20px 20px; display:flex; justify-content:center;">';
+    $html .= '<button type="button" class="modal-button" id="collageSelectorClose" data-modal-close style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; font-weight:600; padding:8px 24px; border-radius:10px; cursor:pointer;">';
+    $html .= '<span class="modal-button--icon" style="margin-right:6px;"><i class="fa fa-times"></i></span>';
     $html .= '<span class="modal-button--label">' . $languageService->translate('close') . '</span>';
     $html .= '</button>';
     $html .= '</div>'; // .modal-buttonbar
