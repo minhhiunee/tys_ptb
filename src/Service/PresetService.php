@@ -60,8 +60,88 @@ class PresetService
             $this->savePresets();
         }
 
+        // Auto-discover any new presets placed in PresetColor/ folder
+        $this->discoverPresetsFromDirectory();
+
         // Ensure LUT files exist for the enabled presets
         $this->ensureLutsExist();
+    }
+
+    /**
+     * Auto-discover preset files (.xmp, .cube) in PresetColor/ directory
+     */
+    public function discoverPresetsFromDirectory(): void
+    {
+        $presetDir = PathUtility::getAbsolutePath('PresetColor');
+        if (!is_dir($presetDir)) {
+            return;
+        }
+
+        $files = scandir($presetDir);
+        if ($files === false) {
+            return;
+        }
+
+        $dirty = false;
+        foreach ($files as $file) {
+            if ($file === '.' || $file === '..') {
+                continue;
+            }
+
+            $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
+            if ($ext !== 'xmp' && $ext !== 'cube') {
+                continue;
+            }
+
+            $sourceRel = 'PresetColor/' . $file;
+            $fullPath = $presetDir . DIRECTORY_SEPARATOR . $file;
+
+            // Check if already registered
+            $alreadyExists = false;
+            foreach ($this->presets as $p) {
+                if (strtolower($p->sourceFile) === strtolower($sourceRel) || basename($p->sourceFile) === $file) {
+                    $alreadyExists = true;
+                    break;
+                }
+            }
+
+            if ($alreadyExists) {
+                continue;
+            }
+
+            $baseNameNoExt = pathinfo($file, PATHINFO_FILENAME);
+            $slug = self::slugify($baseNameNoExt);
+            if (empty($slug)) {
+                $slug = 'preset-' . substr(md5($file), 0, 8);
+            }
+
+            $xmpMeta = ($ext === 'xmp') ? $this->parseXmpFile($fullPath) : ['params' => [], 'exact' => [], 'approx' => [], 'unsupported' => []];
+            $displayName = $xmpMeta['params']['_Name'] ?? self::formatTitle($baseNameNoExt);
+            $lutRel = 'private/presets/' . $slug . '.png';
+
+            $dto = new PresetDto();
+            $dto->id = $slug;
+            $dto->name = $displayName;
+            $dto->group = 'TYS TEST';
+            $dto->version = '1.0';
+            $dto->format = 'xmp_lut';
+            $dto->sourceFile = $sourceRel;
+            $dto->lutFile = $lutRel;
+            $dto->supportsAmount = true;
+            $dto->defaultAmount = 100;
+            $dto->enabled = true;
+            $dto->exactParams = $xmpMeta['exact'];
+            $dto->approximatedParams = $xmpMeta['approx'];
+            $dto->unsupportedParams = $xmpMeta['unsupported'];
+
+            $this->presets[$dto->id] = $dto;
+            $this->logger->info("Auto-discovered and registered new preset: {$displayName} ({$slug})");
+            $dirty = true;
+        }
+
+        if ($dirty) {
+            $this->savePresets();
+        }
     }
 
     /**
@@ -168,6 +248,37 @@ class PresetService
                     $lut->brightnessContrastImage(0, $contrast * 0.25);
                 }
 
+                // Film lifted black floor (matte blacks look)
+                if (!empty($xmpParams['_ToneCurvePV2012']) && is_array($xmpParams['_ToneCurvePV2012'])) {
+                    $firstPoint = trim($xmpParams['_ToneCurvePV2012'][0]);
+                    $parts = explode(',', $firstPoint);
+                    if (isset($parts[1])) {
+                        $blackFloor = (float) trim($parts[1]);
+                        if ($blackFloor > 0) {
+                            $quantum = \Imagick::getQuantumRange()['quantumRangeLong'];
+                            $liftVal = ($blackFloor / 255.0) * $quantum * 0.75;
+                            $lut->evaluateImage(\Imagick::EVALUATE_ADD, $liftVal);
+                        }
+                    }
+                } elseif (((float) ($xmpParams['Blacks2012'] ?? 0)) > 10) {
+                    $quantum = \Imagick::getQuantumRange()['quantumRangeLong'];
+                    $liftVal = (((float) $xmpParams['Blacks2012']) / 100.0) * 0.05 * $quantum;
+                    $lut->evaluateImage(\Imagick::EVALUATE_ADD, $liftVal);
+                }
+
+                // Subtle split-toning warmth / cool balance
+                $splitShadowHue = (float) ($xmpParams['SplitToningShadowHue'] ?? 0);
+                $splitShadowSat = (float) ($xmpParams['SplitToningShadowSaturation'] ?? 0);
+                $splitHighlightHue = (float) ($xmpParams['SplitToningHighlightHue'] ?? 0);
+                $splitHighlightSat = (float) ($xmpParams['SplitToningHighlightSaturation'] ?? 0);
+
+                if ($splitHighlightHue >= 15 && $splitHighlightHue <= 45 && $splitHighlightSat > 0) {
+                    $lut->levelImage(0, 0.98, \Imagick::getQuantumRange()['quantumRangeLong'], \Imagick::CHANNEL_RED);
+                }
+                if ($splitShadowHue >= 140 && $splitShadowHue <= 190 && $splitShadowSat > 5) {
+                    $lut->levelImage(0, 1.02, \Imagick::getQuantumRange()['quantumRangeLong'], \Imagick::CHANNEL_BLUE);
+                }
+
                 $lut->setImageFormat('png');
                 $lut->writeImage($outputLutPath);
                 $lut->clear();
@@ -227,12 +338,70 @@ class PresetService
             }
         }
 
+        // Extract optional preset name from <crs:Name>
+        if (preg_match('/<crs:Name>\s*<rdf:Alt>\s*<rdf:li[^>]*>([^<]+)<\/rdf:li>/i', $content, $m)) {
+            $params['_Name'] = trim($m[1]);
+        }
+        // Extract tone curve points if present
+        if (preg_match('/<crs:ToneCurvePV2012>\s*<rdf:Seq>(.*?)<\/rdf:Seq>/is', $content, $m)) {
+            preg_match_all('/<rdf:li>([^<]+)<\/rdf:li>/i', $m[1], $curveMatches);
+            if (!empty($curveMatches[1])) {
+                $params['_ToneCurvePV2012'] = $curveMatches[1];
+            }
+        }
+
         return [
             'params' => $params,
             'exact' => $exact,
             'approx' => $approx,
             'unsupported' => $unsupported,
         ];
+    }
+
+    /**
+     * Slugify string with Vietnamese diacritics mapping
+     */
+    public static function slugify(string $text): string
+    {
+        $vietnameseMap = [
+            'à'=>'a','á'=>'a','ả'=>'a','ã'=>'a','ạ'=>'a','ă'=>'a','ằ'=>'a','ắ'=>'a','ẳ'=>'a','ẵ'=>'a','ặ'=>'a',
+            'â'=>'a','ầ'=>'a','ấ'=>'a','ẩ'=>'a','ẫ'=>'a','ậ'=>'a',
+            'è'=>'e','é'=>'e','ẻ'=>'e','ẽ'=>'e','ẹ'=>'e','ê'=>'e','ề'=>'e','ế'=>'e','ể'=>'e','ễ'=>'e','ệ'=>'e',
+            'ì'=>'i','í'=>'i','ỉ'=>'i','ĩ'=>'i','ị'=>'i',
+            'ò'=>'o','ó'=>'o','ỏ'=>'o','õ'=>'o','ọ'=>'o','ô'=>'o','ồ'=>'o','ố'=>'o','ổ'=>'o','ỗ'=>'o','ộ'=>'o',
+            'ơ'=>'o','ờ'=>'o','ớ'=>'o','ở'=>'o','ỡ'=>'o','ợ'=>'o',
+            'ù'=>'u','ú'=>'u','ủ'=>'u','ũ'=>'u','ụ'=>'u','ư'=>'u','ừ'=>'u','ứ'=>'u','ử'=>'u','ữ'=>'u','ự'=>'u',
+            'ỳ'=>'y','ý'=>'y','ỷ'=>'y','ỹ'=>'y','ỵ'=>'y',
+            'đ'=>'d',
+            'À'=>'a','Á'=>'a','Ả'=>'a','Ã'=>'a','Ạ'=>'a','Ă'=>'a','Ằ'=>'a','Ắ'=>'a','Ẳ'=>'a','Ẵ'=>'a','Ặ'=>'a',
+            'Â'=>'a','Ầ'=>'a','Ấ'=>'a','Ẩ'=>'a','Ẫ'=>'a','Ậ'=>'a',
+            'È'=>'e','É'=>'e','Ẻ'=>'e','Ẽ'=>'e','Ẹ'=>'e','Ê'=>'e','Ề'=>'e','Ế'=>'e','Ể'=>'e','Ễ'=>'e','Ệ'=>'e',
+            'Ì'=>'i','Í'=>'i','Ỉ'=>'i','Ĩ'=>'i','Ị'=>'i',
+            'Ò'=>'o','Ó'=>'o','Ỏ'=>'o','Õ'=>'o','Ọ'=>'o','Ô'=>'o','Ồ'=>'o','Ố'=>'o','Ổ'=>'o','Ỗ'=>'o','Ộ'=>'o',
+            'Ơ'=>'o','Ờ'=>'o','Ớ'=>'o','Ở'=>'o','Ỡ'=>'o','Ợ'=>'o',
+            'Ù'=>'u','Ú'=>'u','Ủ'=>'u','Ũ'=>'u','Ụ'=>'u','Ư'=>'u','Ừ'=>'u','Ứ'=>'u','Ử'=>'u','Ữ'=>'u','Ự'=>'u',
+            'Ỳ'=>'y','Ý'=>'y','Ỷ'=>'y','Ỹ'=>'y','Ỵ'=>'y',
+            'Đ'=>'d',
+        ];
+        $text = strtr($text, $vietnameseMap);
+        $text = preg_replace('/[^a-zA-Z0-9\s-]/', '', strtolower($text)) ?? '';
+        $text = preg_replace('/[\s-]+/', '-', trim($text)) ?? '';
+        return trim($text, '-');
+    }
+
+    /**
+     * Format title with capital letters for words
+     */
+    public static function formatTitle(string $text): string
+    {
+        $words = explode(' ', trim($text));
+        $titleWords = array_map(function($w) {
+            if ($w === '') {
+                return '';
+            }
+            return mb_convert_case(mb_substr($w, 0, 1, 'UTF-8'), MB_CASE_UPPER, 'UTF-8') . mb_substr($w, 1, null, 'UTF-8');
+        }, $words);
+        return implode(' ', $titleWords);
     }
 
     /**

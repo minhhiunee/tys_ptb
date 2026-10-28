@@ -35,9 +35,9 @@ $downloadUrl = PathUtility::getPublicPath('api/download.php?image=' . rawurlenco
 $languageService = LanguageService::getInstance();
 $appTitle = ApplicationService::getInstance()->getTitle();
 $startScreenTitle = trim((string) ($config['start_screen']['title'] ?? ''));
-$viewerFallbackTitle = $startScreenTitle !== '' ? $startScreenTitle : $appTitle;
-$pageTitle = $appTitle . ' - ' . $languageService->translate('viewer_photo_title');
-$downloadLabel = $languageService->translate('download');
+$viewerFallbackTitle = $startScreenTitle !== '' ? $startScreenTitle : 'TYS Photobooth';
+$pageTitle = $appTitle . ' - ' . ($languageService->translate('viewer_photo_title') ?: 'Tải Ảnh Của Bạn');
+$downloadLabel = $languageService->translate('download') ?: 'Tải Ảnh Về Điện Thoại';
 $eventTitleLines = $config['event']['enabled']
     ? array_values(array_filter([
         $config['event']['textLeft'] ?? '',
@@ -200,10 +200,12 @@ if ($eventTitleLines === []) {
                 <?php endif; ?>
             </div>
 
-            <div class="viewer__actions">
+            <div class="viewer__actions" style="display:flex; flex-direction:column; align-items:center; gap:8px;">
                 <a class="viewer__download" href="<?= htmlspecialchars($downloadUrl) ?>" download="download">
+                    <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                     <?= htmlspecialchars($downloadLabel) ?>
                 </a>
+                <small style="color:var(--viewer-secondary); font-size:12px; margin-top:4px;">💡 Mẹo: Nhấn giữ vào ảnh để "Lưu vào Ảnh" (Save to Photos) nhanh trên iPhone & Android.</small>
             </div>
         </div>
     </main>

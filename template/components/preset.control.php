@@ -95,6 +95,46 @@ $presets = $presetService->getEnabledPresets();
     </div>
 </div>
 
+<!-- Dedicated QR Delivery Modal -->
+<div id="qrDeliveryModal" class="confirm-modal hidden" aria-hidden="true">
+    <div class="confirm-modal-backdrop" id="qr-modal-backdrop"></div>
+    <div class="confirm-modal-card qr-card">
+        <div class="qr-modal-header">
+            <span class="qr-badge" id="qr-mode-badge"><i class="fa fa-qrcode"></i> <span>Mã QR Nhận Ảnh</span></span>
+            <div class="qr-countdown-pill" id="qr-countdown-box" title="Thời gian tự động quay về màn hình chụp">
+                <i class="fa fa-clock-o"></i> <span id="qr-countdown-val">30</span>s
+            </div>
+        </div>
+        
+        <h2 class="qr-modal-title">Quét Mã QR Để Tải Ảnh</h2>
+        <p class="qr-modal-desc" id="qr-modal-instruction">Mở camera điện thoại của bạn và hướng vào mã QR bên dưới để tải ảnh gốc chất lượng cao về máy.</p>
+        
+        <div class="qr-image-container">
+            <div class="qr-image-frame">
+                <img id="qr-modal-img" src="" alt="Photobooth QR Code" style="display:none;">
+                <div class="qr-image-loading" id="qr-loading-spinner">
+                    <i class="fa fa-spinner fa-spin"></i> Đang tạo mã QR...
+                </div>
+            </div>
+        </div>
+
+        <div class="qr-direct-link-container">
+            <a href="#" target="_blank" id="qr-direct-link" class="qr-direct-link">
+                <i class="fa fa-external-link"></i> Mở link tải trực tiếp
+            </a>
+        </div>
+
+        <div class="qr-modal-actions">
+            <button type="button" class="qr-finish-btn" id="qr-btn-finish">
+                <i class="fa fa-check"></i> <span>Đã Tải Xong • Chụp Lượt Mới</span>
+            </button>
+            <button type="button" class="confirm-modal-close" id="qr-btn-close">
+                <i class="fa fa-times"></i> Đóng lại xem ảnh
+            </button>
+        </div>
+    </div>
+</div>
+
 <style>
 .desktop-preset-bar {
     display: none;
@@ -418,5 +458,141 @@ $presets = $presetService->getEnabledPresets();
 }
 .confirm-modal-close:hover {
     color: #334155;
+}
+
+/* Dedicated QR Delivery Modal Styles */
+.qr-card {
+    max-width: 480px !important;
+    padding: 26px 26px 20px !important;
+}
+.qr-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+.qr-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: #f1f5f9;
+    color: #475569;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+}
+.qr-badge.cloud {
+    background: #eff6ff;
+    color: #2563eb;
+}
+.qr-badge.local {
+    background: #f0fdf4;
+    color: #16a34a;
+}
+.qr-countdown-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #fef2f2;
+    color: #ef4444;
+    border: 1px solid #fee2e2;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 700;
+}
+.qr-modal-title {
+    font-size: 22px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0 0 6px;
+}
+.qr-modal-desc {
+    font-size: 13px;
+    color: #64748b;
+    margin: 0 0 16px;
+    line-height: 1.45;
+}
+.qr-image-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 10px 0 14px;
+}
+.qr-image-frame {
+    width: 230px;
+    height: 230px;
+    padding: 12px;
+    background: #ffffff;
+    border-radius: 20px;
+    border: 2px solid #e2e8f0;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.qr-image-frame img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    border-radius: 8px;
+}
+.qr-image-loading {
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 600;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+.qr-direct-link-container {
+    margin-bottom: 18px;
+}
+.qr-direct-link {
+    font-size: 12.5px;
+    color: #3b82f6;
+    text-decoration: none;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 10px;
+    border-radius: 8px;
+    background: #eff6ff;
+    transition: background 0.2s;
+}
+.qr-direct-link:hover {
+    background: #dbeafe;
+    text-decoration: underline;
+}
+.qr-modal-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.qr-finish-btn {
+    width: 100%;
+    background: linear-gradient(135deg, #10b981, #059669);
+    color: #ffffff;
+    border: none;
+    padding: 13px 20px;
+    border-radius: 16px;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.qr-finish-btn:hover {
+    background: linear-gradient(135deg, #34d399, #059669);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 18px rgba(16, 185, 129, 0.5);
 }
 </style>

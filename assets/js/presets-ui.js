@@ -317,25 +317,164 @@
         });
     });
 
+    let qrCountdownTimer = null;
+
+    function openQrDeliveryModal() {
+        if (!currentFilename) {
+            currentFilename = extractFilename();
+        }
+        if (!currentFilename) {
+            console.warn('Cannot open QR modal: filename not detected');
+            return;
+        }
+
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+        const $modal = $('#qrDeliveryModal');
+        const $img = $('#qr-modal-img');
+        const $spinner = $('#qr-loading-spinner');
+        const $badge = $('#qr-mode-badge');
+        const $instruction = $('#qr-modal-instruction');
+        const $link = $('#qr-direct-link');
+        const $countVal = $('#qr-countdown-val');
+
+        // Reset state
+        $img.hide().attr('src', '');
+        $spinner.show();
+        $countVal.text('30');
+        if (qrCountdownTimer) {
+            clearInterval(qrCountdownTimer);
+            qrCountdownTimer = null;
+        }
+
+        $modal.removeClass('hidden').attr('aria-hidden', 'false');
+
+        // Fetch QR metadata
+        const apiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/qrcode.php'
+            : 'api/qrcode.php';
+
+        $.ajax({
+            url: apiUrl,
+            method: 'GET',
+            data: {
+                filename: currentFilename,
+                json: 1
+            },
+            dataType: 'json'
+        }).done(function (data) {
+            if (data && data.url) {
+                $link.attr('href', data.url).show();
+
+                if (data.is_cloud) {
+                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Mạng Online / 4G</span>');
+                    $instruction.text('Mở camera điện thoại (dùng 4G hoặc WiFi bất kỳ) để quét mã QR và tải ảnh gốc về máy.');
+                } else {
+                    $badge.attr('class', 'qr-badge local').html('<i class="fa fa-wifi"></i> <span>WiFi Nội Bộ</span>');
+                    $instruction.text('Kết nối điện thoại vào WiFi Photobooth, sau đó mở camera quét mã QR để tải ảnh trực tiếp.');
+                }
+
+                $img.off('load error').on('load', function () {
+                    $spinner.hide();
+                    $img.fadeIn(200);
+                }).on('error', function () {
+                    $spinner.html('<span style="color:#ef4444;"><i class="fa fa-exclamation-triangle"></i> Lỗi tạo mã QR</span>');
+                });
+
+                $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(currentFilename));
+            }
+        }).fail(function () {
+            // Fallback direct image load
+            $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(currentFilename)).show();
+            $spinner.hide();
+        });
+
+        // Start 30-second countdown
+        let secondsLeft = 30;
+        qrCountdownTimer = setInterval(function () {
+            secondsLeft--;
+            $countVal.text(secondsLeft);
+            if (secondsLeft <= 0) {
+                clearInterval(qrCountdownTimer);
+                qrCountdownTimer = null;
+                window.location.assign('./');
+            }
+        }, 1000);
+    }
+
+    function closeQrDeliveryModal() {
+        if (qrCountdownTimer) {
+            clearInterval(qrCountdownTimer);
+            qrCountdownTimer = null;
+        }
+        $('#qrDeliveryModal').addClass('hidden').attr('aria-hidden', 'true');
+    }
+
+    function triggerPrintAction() {
+        if (!currentFilename) {
+            currentFilename = extractFilename();
+        }
+        if (!currentFilename) {
+            alert('Không tìm thấy file ảnh để in.');
+            return;
+        }
+
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+
+        if (typeof photoboothTools !== 'undefined' && typeof photoboothTools.printImage === 'function') {
+            photoboothTools.printImage(currentFilename, 1, function () {
+                if (typeof remoteBuzzerClient !== 'undefined' && remoteBuzzerClient.inProgress) {
+                    remoteBuzzerClient.inProgress(false);
+                }
+            });
+        } else {
+            // Direct API fallback
+            const apiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+                ? environment.publicFolders.api + '/print.php'
+                : 'api/print.php';
+
+            $.ajax({
+                method: 'GET',
+                url: apiUrl,
+                data: {
+                    filename: currentFilename,
+                    copies: 1,
+                    [csrf.key]: csrf.token
+                },
+                dataType: 'json'
+            }).done(function (data) {
+                if (data.status === 'ok' || data.status === 'queued') {
+                    alert('Lệnh in đã được chuyển tới máy in! Vui lòng nhận ảnh tại khay in.');
+                } else if (data.status === 'locking') {
+                    alert('Máy in đang bị khóa do đã đạt giới hạn bản in.');
+                } else {
+                    alert('Lỗi in ảnh: ' + (data.error || 'Vui lòng kiểm tra kết nối máy in.'));
+                }
+            }).fail(function () {
+                window.print();
+            });
+        }
+    }
+
     // Confirmation Modal actions
     $(document).on('click', '#modal-btn-print', function (e) {
         e.preventDefault();
-        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
-        const $btn = $('[data-command="printbtn"], .printbtn');
-        if ($btn.length) {
-            $btn.trigger('click');
-        } else {
-            window.print();
-        }
+        triggerPrintAction();
     });
 
-    $(document).on('click', '#modal-btn-qr', function (e) {
+    $(document).on('click', '#modal-btn-qr, [data-command="qrbtn"], .qrbtn', function (e) {
         e.preventDefault();
-        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
-        const $btn = $('[data-command="qrbtn"], .qrbtn');
-        if ($btn.length) {
-            $btn.trigger('click');
-        }
+        openQrDeliveryModal();
+    });
+
+    $(document).on('click', '#qr-btn-finish', function (e) {
+        e.preventDefault();
+        closeQrDeliveryModal();
+        window.location.assign('./');
+    });
+
+    $(document).on('click', '#qr-btn-close, #qr-modal-backdrop', function (e) {
+        e.preventDefault();
+        closeQrDeliveryModal();
     });
 
     $(document).on('click', '#modal-btn-gallery', function (e) {

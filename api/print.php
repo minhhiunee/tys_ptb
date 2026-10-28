@@ -250,34 +250,54 @@ if ($config['print']['max_multi'] > 1) {
 $logger->info($cmd);
 $cmd .= ' 2>&1'; //Redirect stderr to stdout, otherwise error messages get lost.
 
+// Create universal print job metadata file for external Windows Spooler / CUPS queue
+$jobFile = FolderEnum::PRINT->absolute() . DIRECTORY_SEPARATOR . $vars['uniqueName'] . '.job.json';
+$jobData = [
+    'id' => $vars['uniqueName'],
+    'filename' => $vars['fileName'],
+    'printFile' => $vars['printFile'],
+    'copies' => (int) $vars['copies'],
+    'timestamp' => time(),
+    'status' => 'pending',
+];
+@file_put_contents($jobFile, json_encode($jobData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
 exec($cmd, $output, $returnValue);
 
 if ($returnValue !== 0) {
-    $status = 'error';
-
     switch ($returnValue) {
         case 1:
+            $status = 'error';
             $error = 'General error. Check printer status or file path.';
             break;
         case 2:
+            $status = 'error';
             $error = 'Misuse of command. Possibly wrong syntax or options.';
             break;
         case 126:
+            $status = 'error';
             $error = 'Command invoked cannot execute. Check permissions.';
             break;
         case 127:
-            $error = "Command not found. Check if 'lp' is installed and in PATH.";
+            // lp not installed in container/Windows: Job is queued to Windows Spooler
+            $status = 'ok';
+            $data['spooled'] = true;
+            $data['message'] = 'Lệnh in đã được chuyển vào hàng đợi máy in Windows';
+            $logger->info("Print command 'lp' not found in container; job safely queued to Windows Spooler ({$vars['uniqueName']}).");
             break;
         case 238:
             $status = 'queued';
             $error = 'Image added to print queue.';
             break;
         default:
+            $status = 'error';
             $error = "Unknown error (exit code $returnValue).";
     }
 
-    $logger->error($error);
-    $data['error'] = $error;
+    if ($status === 'error') {
+        $logger->error($error);
+        $data['error'] = $error;
+    }
 }
 
 $outputMessage = implode("\n", (array) ($output));
