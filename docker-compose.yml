@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   photobooth:
     build: .
@@ -20,5 +18,8 @@ services:
       - ./resources:/app/resources
       - ./PresetColor:/app/PresetColor
       - ./Frame:/app/Frame
+      - ./welcome:/app/welcome
+      - ./scripts:/app/scripts
       - ./index.php:/app/index.php
+      - ./view.php:/app/view.php
 

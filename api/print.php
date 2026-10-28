@@ -59,7 +59,10 @@ try {
     if ($vars['fileName'] === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $vars['fileName'])) {
         throw new \Exception('Invalid filename provided.');
     }
-    $vars['copies'] = max(1, (int) $_GET['copies']);
+    if (str_starts_with($vars['fileName'], 'preview_') || str_starts_with($vars['fileName'], 'orig_')) {
+        throw new \Exception('Cannot print temporary preview or raw unframed original file.');
+    }
+    $vars['copies'] = max(1, (int) ($_GET['copies'] ?? 1));
     $vars['uniqueName'] = substr($vars['fileName'], 0, -4) . '-' . $vars['randomName'];
     $vars['sourceFile'] = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $vars['fileName'];
     $vars['printFile'] = FolderEnum::PRINT->absolute() . DIRECTORY_SEPARATOR . $vars['uniqueName'];
@@ -252,15 +255,21 @@ $cmd .= ' 2>&1'; //Redirect stderr to stdout, otherwise error messages get lost.
 
 // Create universal print job metadata file for external Windows Spooler / CUPS queue
 $jobFile = FolderEnum::PRINT->absolute() . DIRECTORY_SEPARATOR . $vars['uniqueName'] . '.job.json';
+$imgDimensions = @getimagesize($vars['printFile']);
+$detectedOrientation = ($imgDimensions && $imgDimensions[0] > $imgDimensions[1]) ? 'landscape' : 'portrait';
 $jobData = [
     'id' => $vars['uniqueName'],
     'filename' => $vars['fileName'],
     'printFile' => $vars['printFile'],
     'copies' => (int) $vars['copies'],
+    'paper_size' => (string) ($_GET['paper_size'] ?? $config['print']['paper_size'] ?? '4x6'),
+    'orientation' => (string) ($_GET['orientation'] ?? $config['print']['orientation'] ?? $detectedOrientation),
+    'margin' => (string) ($_GET['margin'] ?? $config['print']['margin'] ?? 'borderless'),
     'timestamp' => time(),
     'status' => 'pending',
 ];
 @file_put_contents($jobFile, json_encode($jobData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+$data['job_id'] = $vars['uniqueName'];
 
 exec($cmd, $output, $returnValue);
 

@@ -7,21 +7,60 @@ use Photobooth\Utility\PathUtility;
 
 require_once __DIR__ . '/lib/boot.php';
 
-$imageParam = $_GET['image'] ?? '';
+$imageParam = $_GET['image'] ?? $_GET['session'] ?? '';
 $image = basename((string) $imageParam);
+if ($image !== '' && !str_contains($image, '.')) {
+    $image .= '.jpg';
+}
 
-if ($image === '') {
+if (
+    $image === '' ||
+    !preg_match('/^[A-Za-z0-9._-]+$/', $image) ||
+    str_starts_with($image, 'meta_') ||
+    str_starts_with($image, 'preview_') ||
+    str_starts_with($image, 'orig_')
+) {
     http_response_code(400);
-    echo 'No image specified.';
+    echo 'Invalid or restricted media identifier.';
     exit();
 }
 
-$imagePath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $image;
+$imagesDir = FolderEnum::IMAGES->absolute();
+$imagePath = $imagesDir . DIRECTORY_SEPARATOR . $image;
 if (!is_file($imagePath)) {
     http_response_code(404);
     echo 'Image not found.';
     exit();
 }
+
+// Check link expiry if configured (e.g. $config['qr']['expire_hours'])
+$expireHours = (int) ($config['qr']['expire_hours'] ?? 0);
+if ($expireHours > 0) {
+    $fileAgeSeconds = time() - (int) filemtime($imagePath);
+    if ($fileAgeSeconds > ($expireHours * 3600)) {
+        http_response_code(410);
+        echo 'This download link has expired.';
+        exit();
+    }
+}
+
+$sessionId = pathinfo($image, PATHINFO_FILENAME);
+$metaPath = $imagesDir . DIRECTORY_SEPARATOR . 'meta_' . $image . '.json';
+$sessionMeta = [];
+if (is_file($metaPath)) {
+    $decodedMeta = json_decode((string) file_get_contents($metaPath), true);
+    if (is_array($decodedMeta)) {
+        $sessionMeta = $decodedMeta;
+    }
+}
+
+// Locate companion animated GIF if generated for this session
+$gifFile = $sessionMeta['gif_photo'] ?? ($sessionId . '.gif');
+$gifFile = basename((string) $gifFile);
+$gifPath = $imagesDir . DIRECTORY_SEPARATOR . $gifFile;
+$hasGif = is_file($gifPath) && strtolower(pathinfo($image, PATHINFO_EXTENSION)) !== 'gif';
+$gifInlineUrl = $hasGif ? PathUtility::getPublicPath('api/download.php?image=' . rawurlencode($gifFile) . '&inline=1') : '';
+$gifDownloadUrl = $hasGif ? PathUtility::getPublicPath('api/download.php?image=' . rawurlencode($gifFile)) : '';
 
 $extension = strtolower(pathinfo($imagePath, PATHINFO_EXTENSION));
 $isVideo = in_array($extension, ['mp4', 'mov', 'webm'], true);
@@ -190,6 +229,17 @@ if ($eventTitleLines === []) {
             </header>
             <div class="viewer__accent"></div>
 
+            <?php if ($hasGif): ?>
+                <div class="viewer__tabs" style="display:flex; justify-content:center; gap:10px;">
+                    <button type="button" id="tab-photo" onclick="switchMedia('photo')" style="padding:8px 18px; border-radius:999px; border:1px solid var(--viewer-primary); background:var(--viewer-primary); color:#ffffff; font-weight:700; font-size:13px; cursor:pointer;">
+                        📸 Ảnh Ghép Khung
+                    </button>
+                    <button type="button" id="tab-gif" onclick="switchMedia('gif')" style="padding:8px 18px; border-radius:999px; border:1px solid var(--viewer-border); background:#f8fafc; color:var(--viewer-font); font-weight:700; font-size:13px; cursor:pointer;">
+                        🎞️ Ảnh Động GIF
+                    </button>
+                </div>
+            <?php endif; ?>
+
             <div class="viewer__media" aria-label="Captured media preview">
                 <?php if ($isVideo): ?>
                     <video src="<?= htmlspecialchars($imageUrl) ?>" controls playsinline controlsList="nodownload">
@@ -197,17 +247,54 @@ if ($eventTitleLines === []) {
                     </video>
                 <?php else: ?>
                     <img id="viewer-image" src="<?= htmlspecialchars($imageUrl) ?>" alt="Captured photo">
+                    <?php if ($hasGif): ?>
+                        <img id="viewer-gif" src="<?= htmlspecialchars($gifInlineUrl) ?>" alt="Animated GIF" style="display:none;">
+                    <?php endif; ?>
                 <?php endif; ?>
             </div>
 
-            <div class="viewer__actions" style="display:flex; flex-direction:column; align-items:center; gap:8px;">
-                <a class="viewer__download" href="<?= htmlspecialchars($downloadUrl) ?>" download="download">
-                    <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                    <?= htmlspecialchars($downloadLabel) ?>
-                </a>
-                <small style="color:var(--viewer-secondary); font-size:12px; margin-top:4px;">💡 Mẹo: Nhấn giữ vào ảnh để "Lưu vào Ảnh" (Save to Photos) nhanh trên iPhone & Android.</small>
+            <div class="viewer__actions" style="display:flex; flex-direction:column; align-items:center; gap:10px;">
+                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:10px; width:100%;">
+                    <a class="viewer__download" href="<?= htmlspecialchars($downloadUrl) ?>" download="<?= htmlspecialchars($image) ?>">
+                        <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        <?= htmlspecialchars($downloadLabel) ?>
+                    </a>
+                    <?php if ($hasGif): ?>
+                        <a class="viewer__download" href="<?= htmlspecialchars($gifDownloadUrl) ?>" download="<?= htmlspecialchars($gifFile) ?>" style="background:#0284c7;">
+                            <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
+                            Tải Ảnh Động GIF
+                        </a>
+                    <?php endif; ?>
+                </div>
+                <small style="color:var(--viewer-secondary); font-size:12px; margin-top:2px;">💡 Mẹo: Nhấn giữ vào ảnh để "Lưu vào Ảnh" (Save to Photos) nhanh trên iPhone & Android.</small>
             </div>
         </div>
     </main>
+    <?php if ($hasGif): ?>
+    <script>
+        function switchMedia(mode) {
+            var imgPhoto = document.getElementById('viewer-image');
+            var imgGif = document.getElementById('viewer-gif');
+            var tabPhoto = document.getElementById('tab-photo');
+            var tabGif = document.getElementById('tab-gif');
+            if (!imgPhoto || !imgGif) return;
+            if (mode === 'gif') {
+                imgPhoto.style.display = 'none';
+                imgGif.style.display = 'block';
+                tabGif.style.background = 'var(--viewer-primary)';
+                tabGif.style.color = '#ffffff';
+                tabPhoto.style.background = '#f8fafc';
+                tabPhoto.style.color = 'var(--viewer-font)';
+            } else {
+                imgPhoto.style.display = 'block';
+                imgGif.style.display = 'none';
+                tabPhoto.style.background = 'var(--viewer-primary)';
+                tabPhoto.style.color = '#ffffff';
+                tabGif.style.background = '#f8fafc';
+                tabGif.style.color = 'var(--viewer-font)';
+            }
+        }
+    </script>
+    <?php endif; ?>
 </body>
 </html>

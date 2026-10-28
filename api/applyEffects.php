@@ -99,8 +99,23 @@ try {
         $processor = new ImageProcessor($imageHandler, $logger, $database, $vars, $config);
     }
 
+    $vars['sessionId'] = pathinfo($vars['fileName'], PATHINFO_FILENAME);
+    $vars['gifFileName'] = null;
+    $vars['savedOriginalPoses'] = [];
+
     if ($vars['isCollage']) {
         [$vars['collageSrcImagePaths'], $vars['srcImages']] = Collage::getCollageFiles($config['collage'], $vars['tmpFile'], $vars['fileName'], $vars['srcImages']);
+
+        // Preserve raw pose files so original shots are never lost and can be used for GIF re-baking
+        foreach ($vars['collageSrcImagePaths'] as $poseIdx => $posePath) {
+            if (is_string($posePath) && file_exists($posePath)) {
+                $poseSaveName = 'orig_pose_' . ($poseIdx + 1) . '_' . $vars['fileName'];
+                $poseSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $poseSaveName;
+                if (@copy($posePath, $poseSaveDest)) {
+                    $vars['savedOriginalPoses'][] = $poseSaveName;
+                }
+            }
+        }
 
         if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'preCollageProcessing')) {
             [$imageHandler, $vars, $config] = $processor->preCollageProcessing($imageHandler, $vars, $config);
@@ -110,6 +125,23 @@ try {
         }
         if ($processor !== null && $processor instanceof ImageProcessor && method_exists($processor, 'postCollageProcessing')) {
             [$imageHandler, $vars, $config] = $processor->postCollageProcessing($imageHandler, $vars, $config);
+        }
+
+        // Generate Animated GIF from the collage poses
+        $gifFileName = $vars['sessionId'] . '.gif';
+        $gifTargetPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $gifFileName;
+        $gifDelayMs = (int) ($config['collage']['gif_delay_ms'] ?? 450);
+        $gifMaxDim = (int) ($config['collage']['gif_max_dimension'] ?? 720);
+        $gifProcessor = new \Photobooth\Processor\GifProcessor();
+        if ($gifProcessor->createAnimatedGif(
+            $vars['collageSrcImagePaths'],
+            $gifTargetPath,
+            $gifDelayMs,
+            $gifMaxDim,
+            $vars['preset'],
+            $vars['preset_amount'] ?? 100
+        )) {
+            $vars['gifFileName'] = $gifFileName;
         }
 
         // Save original pristine collage and frame metadata
@@ -128,15 +160,45 @@ try {
         }
 
         $metaData = [
+            'session_id' => $vars['sessionId'],
             'isCollage' => true,
             'layout' => $config['collage']['layout'],
             'orientation' => $config['collage']['orientation'] ?? 'portrait',
             'frame' => $framePath,
             'limit' => $config['collage']['limit'] ?? 1,
+            'preset' => $vars['preset'] ?? 'original',
+            'preset_amount' => $vars['preset_amount'] ?? 100,
+            'final_photo' => $vars['fileName'],
+            'gif_photo' => $vars['gifFileName'],
+            'original_photos' => $vars['savedOriginalPoses'],
             'created_at' => time()
         ];
-        @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData));
-        @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData));
+        @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+    } else {
+        // Save pristine original for single photo mode as well
+        $origSingleTemp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
+        $origSingleFinal = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
+        @copy($vars['tmpFile'], $origSingleTemp);
+        @copy($vars['tmpFile'], $origSingleFinal);
+        $vars['savedOriginalPoses'][] = 'orig_' . $vars['fileName'];
+
+        $metaData = [
+            'session_id' => $vars['sessionId'],
+            'isCollage' => false,
+            'layout' => 'single',
+            'orientation' => 'portrait',
+            'frame' => $config['picture']['take_frame'] ? $config['picture']['frame'] : null,
+            'limit' => 1,
+            'preset' => $vars['preset'] ?? 'original',
+            'preset_amount' => $vars['preset_amount'] ?? 100,
+            'final_photo' => $vars['fileName'],
+            'gif_photo' => null,
+            'original_photos' => $vars['savedOriginalPoses'],
+            'created_at' => time()
+        ];
+        @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
     foreach ($vars['srcImages'] as $vars['singleImageFile']) {
@@ -474,9 +536,23 @@ if (is_array($imageHandler->errorLog) && !empty($imageHandler->errorLog)) {
     $logger->error('Error', $imageHandler->errorLog);
 }
 
+// Enqueue session into Offline-First Sync Queue (Stage 6)
+try {
+    \Photobooth\Service\SyncQueueService::getInstance()->enqueueSession($vars['sessionId'], [
+        'final_photo' => $vars['fileName'],
+        'gif_photo' => $vars['gifFileName'] ?? null,
+        'original_photos' => $vars['savedOriginalPoses'] ?? [],
+        'metadata' => $metaData ?? [],
+    ]);
+} catch (\Throwable $syncErr) {
+    $logger->warning('SyncQueue enqueue warning: ' . $syncErr->getMessage());
+}
+
 $data = [
     'file' => $vars['fileName'],
     'images' => $vars['srcImages'],
+    'gif' => $vars['gifFileName'] ?? null,
+    'session_id' => $vars['sessionId'] ?? null,
 ];
 $logger->debug('effects applied', $data);
 echo json_encode($data);

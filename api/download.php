@@ -10,9 +10,17 @@ $image = (isset($_GET['image']) && $_GET['image']) != '' ? $_GET['image'] : fals
 $forceDownload = !isset($_GET['inline']) || $_GET['inline'] !== '1';
 if ($image) {
     $basename = basename($image);
-    if ($basename === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $basename)) {
+    $extCheck = strtolower((string) pathinfo($basename, PATHINFO_EXTENSION));
+    $allowedDownloadExts = ['jpg', 'jpeg', 'png', 'gif', 'mp4', 'webm', 'mov'];
+    if (
+        $basename === '' ||
+        !preg_match('/^[A-Za-z0-9._-]+$/', $basename) ||
+        str_starts_with($basename, 'meta_') ||
+        str_starts_with($basename, 'preview_') ||
+        !in_array($extCheck, $allowedDownloadExts, true)
+    ) {
         http_response_code(400);
-        echo 'Invalid image name.';
+        echo 'Invalid or restricted media file.';
         exit();
     }
 

@@ -131,10 +131,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             copy($targetFile, $thumbFile);
         }
 
+        // Persist applied preset & amount into session metadata JSON (Stage 2 & 3 requirement)
+        $sessionId = pathinfo($file, PATHINFO_FILENAME);
+        $metaImagesPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $file . '.json';
+        $metaTempPath = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $file . '.json';
+        $currentMeta = [];
+        if (isset($meta) && is_array($meta)) {
+            $currentMeta = $meta;
+        } elseif (file_exists($metaImagesPath)) {
+            $decodedMeta = json_decode((string) file_get_contents($metaImagesPath), true);
+            if (is_array($decodedMeta)) {
+                $currentMeta = $decodedMeta;
+            }
+        }
+
+        $currentMeta['session_id'] = $currentMeta['session_id'] ?? $sessionId;
+        $currentMeta['final_photo'] = $file;
+        $currentMeta['preset'] = $presetId;
+        $currentMeta['preset_amount'] = $amount;
+        $currentMeta['updated_at'] = time();
+
+        // Re-bake animated GIF with the new preset if original pose photos exist
+        $gifUrl = null;
+        if (!empty($currentMeta['original_photos']) && is_array($currentMeta['original_photos'])) {
+            $poseAbsPaths = [];
+            foreach ($currentMeta['original_photos'] as $poseName) {
+                $candidatePose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $poseName);
+                if (file_exists($candidatePose)) {
+                    $poseAbsPaths[] = $candidatePose;
+                }
+            }
+            if (count($poseAbsPaths) > 1) {
+                $gifFileName = $currentMeta['gif_photo'] ?? ($sessionId . '.gif');
+                $gifTargetPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $gifFileName;
+                $gifProcessor = new \Photobooth\Processor\GifProcessor();
+                if ($gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 450, 720, $presetId, $amount)) {
+                    $currentMeta['gif_photo'] = $gifFileName;
+                    $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . time();
+                }
+            }
+        }
+
+        $encodedMeta = json_encode($currentMeta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        @file_put_contents($metaImagesPath, $encodedMeta);
+        if (file_exists($metaTempPath)) {
+            @file_put_contents($metaTempPath, $encodedMeta);
+        }
+
+        // Update offline-first sync queue with newly baked preset
+        try {
+            \Photobooth\Service\SyncQueueService::getInstance()->enqueueSession($sessionId, [
+                'final_photo' => $file,
+                'gif_photo' => $currentMeta['gif_photo'] ?? null,
+                'original_photos' => $currentMeta['original_photos'] ?? [],
+                'metadata' => $currentMeta,
+            ]);
+        } catch (\Throwable $syncErr) {
+            $logger->warning('Preset sync queue update warning: ' . $syncErr->getMessage());
+        }
+
         echo json_encode([
             'success' => true,
             'file' => $file,
             'url' => PathUtility::getPublicPath('data/images/' . $file) . '?v=' . time(),
+            'gif_url' => $gifUrl,
             'preset' => $presetId,
             'amount' => $amount,
         ]);

@@ -3,6 +3,7 @@
 namespace Photobooth;
 
 use Photobooth\Logger\NamedLogger;
+use Photobooth\Service\CameraManagerService;
 use Photobooth\Service\LoggerService;
 use Photobooth\Utility\ImageUtility;
 
@@ -15,12 +16,13 @@ class PhotoboothCapture
     public string $fileName;
     public string $tmpFile;
     public string $collageSubFile;
-    public int $collageNumber;
-    public int $collageLimit;
+    public int $collageNumber = 0;
+    public int $collageLimit = 1;
     public string $flipImage = 'off';
     public string $captureCmd;
     public NamedLogger $logger;
     public int $debugLevel = 1;
+    public array $providerMeta = [];
 
     /**
      * PhotoboothCapture constructor.
@@ -32,79 +34,48 @@ class PhotoboothCapture
     }
 
     /**
-     * Capture a demo image.
+     * Capture a demo image via MockCameraProvider.
      */
     public function captureDemo(): void
     {
-        $this->logger->debug('Capture Demo');
+        $this->logger->debug('Capture Demo via MockCameraProvider');
 
-        try {
-            $demoImages = ImageUtility::getDemoImages();
-            $demoImage = $demoImages[array_rand($demoImages)];
+        $provider = CameraManagerService::getInstance()->getActiveProvider(['provider' => 'mock']);
+        $res = $provider->capture($this->tmpFile, [
+            'collageNumber' => $this->collageNumber,
+            'flip' => $this->flipImage,
+            'style' => $this->style,
+        ]);
+        $this->providerMeta = $res;
 
-            $extension = strtolower(pathinfo($demoImage, PATHINFO_EXTENSION));
-            if (in_array($extension, ['jpg', 'jpeg'], true)) {
-                copy($demoImage, $this->tmpFile);
-                return;
-            }
-
-            $imageHandler = new Image();
-            $imageHandler->debugLevel = $this->debugLevel;
-            $imageHandler->jpegQuality = 100;
-            $imageResource = $imageHandler->createFromImage($demoImage);
-            if (!$imageResource instanceof \GdImage) {
-                throw new \Exception('Failed to create image resource from demo image.');
-            }
-            $imageHandler->saveJpeg($imageResource, $this->tmpFile);
-            unset($imageResource);
-        } catch (\Exception $e) {
-            $this->logger->error('Failed to load demo image!', ['error' => $e->getMessage()]);
-            echo json_encode(['error' => 'Failed to load demo image!']);
+        if (empty($res['success'])) {
+            $err = $res['error'] ?? 'Failed to load demo image!';
+            $this->logger->error($err);
+            echo json_encode(['error' => $err]);
             die();
         }
     }
 
     /**
-     * Capture an image from canvas data.
+     * Capture an image from canvas data via WebcamProvider.
      * @param string $data
      */
     public function captureCanvas($data): void
     {
-        $this->logger->debug('Capture Canvas');
-        try {
-            list($type, $data) = explode(';', $data);
-            list(, $data) = explode(',', $data);
-            $data = base64_decode($data);
+        $this->logger->debug('Capture Canvas via WebcamProvider');
 
-            file_put_contents($this->tmpFile, $data);
+        $provider = CameraManagerService::getInstance()->getActiveProvider(['provider' => 'webcam']);
+        $res = $provider->capture($this->tmpFile, [
+            'canvasData' => (string) $data,
+            'flip' => $this->flipImage,
+            'style' => $this->style,
+        ]);
+        $this->providerMeta = $res;
 
-            if ($this->flipImage != 'off') {
-                $imageHandler = new Image();
-                $im = $imageHandler->createFromImage($this->tmpFile);
-                if (!$im instanceof \GdImage) {
-                    throw new \Exception('Failed to create image resource from tmp image.');
-                }
-                $imageHandler->debugLevel = $this->debugLevel;
-                $imageHandler->jpegQuality = 100;
-                switch ($this->flipImage) {
-                    case 'flip-horizontal':
-                        imageflip($im, IMG_FLIP_HORIZONTAL);
-                        break;
-                    case 'flip-vertical':
-                        imageflip($im, IMG_FLIP_VERTICAL);
-                        break;
-                    case 'flip-both':
-                        imageflip($im, IMG_FLIP_BOTH);
-                        break;
-                    default:
-                        break;
-                }
-                $imageHandler->saveJpeg($im, $this->tmpFile);
-                unset($im);
-            }
-        } catch (\Exception $e) {
-            $this->logger->error($e->getMessage());
-            echo json_encode(['error' => $e->getMessage()]);
+        if (empty($res['success'])) {
+            $err = $res['error'] ?? 'Failed to capture webcam canvas';
+            $this->logger->error($err);
+            echo json_encode(['error' => $err]);
             die();
         }
     }
@@ -183,11 +154,17 @@ class PhotoboothCapture
                 'collage_file' => $this->collageSubFile,
                 'current' => $this->collageNumber,
                 'limit' => $this->collageLimit,
+                'provider' => $this->providerMeta['provider'] ?? 'cmd',
+                'is_mock' => $this->providerMeta['is_mock'] ?? false,
+                'capture_time_ms' => $this->providerMeta['capture_time_ms'] ?? 0,
             ];
         } else {
             $data = [
                 'success' => $this->style,
-                'file' => $this->fileName
+                'file' => $this->fileName,
+                'provider' => $this->providerMeta['provider'] ?? 'cmd',
+                'is_mock' => $this->providerMeta['is_mock'] ?? false,
+                'capture_time_ms' => $this->providerMeta['capture_time_ms'] ?? 0,
             ];
         }
         $this->logger->debug('returnData', $data);
