@@ -59,6 +59,15 @@ class AutoVersionStrategy implements VersionStrategyInterface
             }
         }
 
+        // Always use live filemtime for local files when present so JS/CSS updates are never stale in browser cache
+        $absolutePath = PathUtility::getAbsolutePath($path);
+        if (is_file($absolutePath)) {
+            $mtime = @filemtime($absolutePath);
+            if ($mtime !== false) {
+                return (string) $mtime;
+            }
+        }
+
         // revision data contains a hash of the
         // current file contents, this one is
         // applied when a hash exists.

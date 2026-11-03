@@ -8,6 +8,17 @@ $presetService = PresetService::getInstance();
 $presets = $presetService->getEnabledPresets();
 ?>
 
+<!-- Live Framed Time-Lapse GIF Overlay Viewer on Result Screen -->
+<div id="result-gif-viewer" class="result-gif-viewer hidden" aria-hidden="true">
+    <div class="result-gif-badge">
+        <i class="fa fa-film"></i> <span>Ảnh Động Lồng Khung (Speedup 10s)</span>
+        <button type="button" id="btn-close-gif-viewer" title="Quay lại xem ảnh tĩnh" style="background:rgba(255,255,255,0.2); border:none; color:#fff; border-radius:999px; padding:2px 10px; font-size:11px; font-weight:700; cursor:pointer; margin-left:8px;">
+            ✕ Đóng
+        </button>
+    </div>
+    <img id="result-gif-img" src="" alt="Framed Time-Lapse GIF">
+</div>
+
 <div id="desktop-preset-bar" class="desktop-preset-bar">
     <div class="preset-bar-inner">
         <!-- Preset Selector Buttons -->
@@ -29,8 +40,11 @@ $presets = $presetService->getEnabledPresets();
             <input type="range" id="preset-amount-slider" min="0" max="100" value="100" class="preset-slider" title="Drag to adjust intensity">
         </div>
 
-        <!-- Before / After Hold Button -->
+        <!-- Before / After Hold Button & Live Time-Lapse GIF Toggle -->
         <div class="preset-compare-container">
+            <button type="button" id="btn-toggle-gif-preview" class="compare-btn" title="Xem Ảnh Động GIF tua nhanh quá trình từ lúc bắt đầu đến lúc chụp xong" style="background:rgba(14,165,233,0.2); border-color:rgba(56,189,248,0.5); color:#7dd3fc; font-weight:600;">
+                <i class="fa fa-film"></i> <span>Ảnh Động (Tua nhanh)</span>
+            </button>
             <button type="button" id="btn-hold-compare" class="compare-btn" title="Click & hold mouse button to view original image (or press \ )">
                 <i class="fa fa-columns"></i> Hold: Before/After
             </button>
@@ -101,8 +115,56 @@ $presets = $presetService->getEnabledPresets();
     <div class="confirm-modal-card qr-card">
         <div class="qr-modal-header">
             <span class="qr-badge" id="qr-mode-badge"><i class="fa fa-qrcode"></i> <span>Mã QR Nhận Ảnh</span></span>
-            <div class="qr-countdown-pill" id="qr-countdown-box" title="Thời gian tự động quay về màn hình chụp">
-                <i class="fa fa-clock-o"></i> <span id="qr-countdown-val">30</span>s
+            <div style="display:flex; align-items:center; gap:8px;">
+                <button type="button" id="btn-toggle-qr-settings" title="Chuyển đổi Chế độ QR: Mạng Địa Điểm (Hướng 1) / Website Cloud (Hướng 2)" style="background:#eff6ff; border:1px solid #93c5fd; color:#1d4ed8; height:32px; padding:0 12px; border-radius:20px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:5px; font-size:12px; font-weight:700;">
+                    <i class="fa fa-sliders"></i> <span>Chế độ Mạng</span>
+                </button>
+                <div class="qr-countdown-pill" id="qr-countdown-box" title="Thời gian tự động quay về màn hình chụp">
+                    <i class="fa fa-clock-o"></i> <span id="qr-countdown-val">30</span>s
+                </div>
+            </div>
+        </div>
+
+        <!-- Inline Switcher Panel: Hướng 1 (Venue Wi-Fi) vs Hướng 2 (Cloud Web) -->
+        <div id="qr-network-settings-panel" style="display:none; background:#f8fafc; border:1px solid #cbd5e1; border-radius:14px; padding:12px 14px; margin-bottom:12px; text-align:left; font-size:12px; color:#1e293b;">
+            <div style="font-weight:800; font-size:13px; margin-bottom:8px; color:#0f172a; display:flex; justify-content:space-between; align-items:center;">
+                <span>⚙️ Cấu hình Chế độ Lấy Ảnh QR</span>
+                <span id="qr-net-save-msg" style="font-size:11px; color:#10b981; font-weight:700;"></span>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:10px;">
+                <label style="flex:1; display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:10px; border:1px solid #cbd5e1; background:#ffffff; cursor:pointer; font-weight:700;">
+                    <input type="radio" name="qr_delivery_mode" value="venue_wifi" checked>
+                    <span>📶 Hướng 1: Mạng Địa Điểm</span>
+                </label>
+                <label style="flex:1; display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:10px; border:1px solid #cbd5e1; background:#ffffff; cursor:pointer; font-weight:700;">
+                    <input type="radio" name="qr_delivery_mode" value="cloud_web">
+                    <span>☁️ Hướng 2: Web Riêng (4G)</span>
+                </label>
+            </div>
+            <div id="qr-fields-venue" style="display:flex; flex-direction:column; gap:6px;">
+                <div>
+                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">IP Máy Photobooth tại địa điểm (LAN IP):</label>
+                    <input type="text" id="input-venue-ip" placeholder="VD: 192.168.1.105" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
+                </div>
+                <div>
+                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">Tên Wi-Fi địa điểm (Hiển thị nhắc khách):</label>
+                    <input type="text" id="input-venue-ssid" placeholder="VD: Coffee_House_5G (Tùy chọn)" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
+                </div>
+            </div>
+            <div id="qr-fields-cloud" style="display:none; flex-direction:column; gap:6px;">
+                <div>
+                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">Địa chỉ Website Cloud riêng (Hỗ trợ mọi 4G/Wi-Fi):</label>
+                    <input type="text" id="input-cloud-url" placeholder="VD: https://photo.tenmiencuaban.com" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
+                </div>
+                <div>
+                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">Cloud API Key bảo mật:</label>
+                    <input type="text" id="input-cloud-key" placeholder="tys_secret_key_2026" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
+                </div>
+            </div>
+            <div style="margin-top:10px; display:flex; justify-content:flex-end; gap:8px;">
+                <button type="button" id="btn-save-qr-network" style="background:#2563eb; color:#ffffff; border:none; border-radius:8px; padding:6px 14px; font-weight:700; font-size:12px; cursor:pointer;">
+                    <i class="fa fa-check"></i> Lưu & Cập nhật Mã QR
+                </button>
             </div>
         </div>
         
@@ -136,13 +198,56 @@ $presets = $presetService->getEnabledPresets();
 </div>
 
 <style>
+.result-gif-viewer {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    height: calc(100dvh - 165px);
+    max-width: 92vw;
+    z-index: 45;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+}
+.result-gif-viewer.hidden {
+    display: none !important;
+}
+.result-gif-viewer img {
+    max-height: calc(100% - 40px);
+    max-width: 100%;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 12px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.65);
+    border: 2px solid rgba(56, 189, 248, 0.6);
+    background: #0f172a;
+}
+.result-gif-badge {
+    background: rgba(15, 23, 42, 0.92);
+    border: 1px solid rgba(56, 189, 248, 0.5);
+    color: #38bdf8;
+    padding: 5px 14px;
+    border-radius: 999px;
+    font-size: 12.5px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+}
 .desktop-preset-bar {
     display: none;
     justify-content: center;
     width: 100%;
     margin-bottom: 5.5rem;
-    pointer-events: auto;
-    z-index: 50;
+    pointer-events: auto !important;
+    touch-action: auto !important;
+    z-index: 60;
     transition: opacity 0.25s ease, transform 0.25s ease;
 }
 .stage[data-stage="result"].stage--active .desktop-preset-bar {
@@ -251,11 +356,14 @@ $presets = $presetService->getEnabledPresets();
     -webkit-appearance: none;
     appearance: none;
     width: 120px;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.25);
-    border-radius: 3px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 4px;
     outline: none;
     cursor: pointer;
+    pointer-events: auto !important;
+    touch-action: pan-x !important;
+    user-select: auto !important;
     transition: background 0.2s;
 }
 .preset-slider::-webkit-slider-thumb {
@@ -303,6 +411,13 @@ $presets = $presetService->getEnabledPresets();
     border-color: #fde047;
     color: #0f172a;
     font-weight: 700;
+}
+.compare-btn.active {
+    background: linear-gradient(135deg, #0284c7, #2563eb) !important;
+    border-color: #38bdf8 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    box-shadow: 0 0 14px rgba(56, 189, 248, 0.6);
 }
 .preset-status-pill {
     font-size: 11px;

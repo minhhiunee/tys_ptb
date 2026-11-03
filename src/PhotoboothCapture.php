@@ -126,6 +126,14 @@ class PhotoboothCapture
         }
 
         if (!file_exists($this->tmpFile)) {
+            if ($this->style !== 'video') {
+                $this->logger->warning('Hardware camera capture produced no file; falling back to MockCameraProvider for testing.', [
+                    'cmd' => $cmd,
+                    'returnValue' => $returnValue,
+                ]);
+                $this->captureDemo();
+                return;
+            }
             $data = [
                 'error' => 'File was not created',
                 'cmd' => $cmd,

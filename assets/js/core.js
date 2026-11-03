@@ -119,6 +119,7 @@ const photoBooth = (function () {
     };
 
     api.reset = function () {
+        api.takingPic = false;
         loader.css('--stage-background', 'var(--background-countdown-color)');
         loader.removeClass('stage--active');
         loaderButtonBar.empty();
@@ -204,12 +205,78 @@ const photoBooth = (function () {
         filternav.toggleClass('filters--disabled', !enabled);
     };
 
+    api.timelapse = {
+        frames: [],
+        timer: null,
+        canvas: null,
+        maxFramesPerPose: 26,
+        intervalMs: 420,
+        captureFrame: () => {
+            try {
+                const videoEl = previewVideo.get(0);
+                if (!photoboothPreview.stream || !videoEl || !videoEl.videoWidth || !videoEl.videoHeight) {
+                    return;
+                }
+                if (api.timelapse.frames.length >= api.timelapse.maxFramesPerPose) {
+                    return;
+                }
+                if (!api.timelapse.canvas) {
+                    api.timelapse.canvas = document.createElement('canvas');
+                }
+                const maxDim = 540;
+                const scale = Math.min(1, maxDim / Math.max(videoEl.videoWidth, videoEl.videoHeight));
+                const w = Math.max(1, Math.round(videoEl.videoWidth * scale));
+                const h = Math.max(1, Math.round(videoEl.videoHeight * scale));
+                api.timelapse.canvas.width = w;
+                api.timelapse.canvas.height = h;
+                const ctx = api.timelapse.canvas.getContext('2d');
+                ctx.drawImage(videoEl, 0, 0, w, h);
+                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.78);
+                if (dataUrl && dataUrl.indexOf('data:image/jpeg') === 0) {
+                    api.timelapse.frames.push(dataUrl);
+                }
+            } catch (e) {
+                // ignore frame sample error
+            }
+        },
+        start: () => {
+            api.timelapse.stop();
+            api.timelapse.frames = [];
+            api.timelapse.captureFrame();
+            api.timelapse.timer = setInterval(() => {
+                api.timelapse.captureFrame();
+            }, api.timelapse.intervalMs);
+        },
+        stopAndFinalize: () => {
+            if (api.timelapse.timer) {
+                clearInterval(api.timelapse.timer);
+                api.timelapse.timer = null;
+            }
+            api.timelapse.captureFrame();
+            if (api.timelapse.frames.length > 0) {
+                const lastFrame = api.timelapse.frames[api.timelapse.frames.length - 1];
+                // Hold the final snapped pose for 2 extra ticks at the end of the fast-forward sequence
+                api.timelapse.frames.push(lastFrame);
+                api.timelapse.frames.push(lastFrame);
+            }
+        },
+        stop: () => {
+            if (api.timelapse.timer) {
+                clearInterval(api.timelapse.timer);
+                api.timelapse.timer = null;
+            }
+        }
+    };
+
     api.stopPreviewAndCaptureFromVideo = () => {
+        api.hasLiveCanvasCapture = false;
+        api.timelapse.stopAndFinalize();
         if (config.preview.camTakesPic) {
-            if (photoboothPreview.stream) {
+            if (photoboothPreview.stream && previewVideo.get(0) && previewVideo.get(0).videoWidth > 0) {
                 videoSensor.get(0).width = previewVideo.get(0).videoWidth;
                 videoSensor.get(0).height = previewVideo.get(0).videoHeight;
                 videoSensor.get(0).getContext('2d').drawImage(previewVideo.get(0), 0, 0);
+                api.hasLiveCanvasCapture = true;
             }
         }
         if (!config.commands.preview_kill || config.preview.camTakesPic) {
@@ -600,6 +667,7 @@ const photoBooth = (function () {
                 photoboothTools.getRequest(getUrl);
             }
 
+            api.timelapse.start();
             await api.countdown.start(countdownTime);
             await api.cheese.start();
 
@@ -634,9 +702,14 @@ const photoBooth = (function () {
 
             const data = {
                 filter: imgFilter,
-                style: api.photoStyle,
-                canvasimg: videoSensor.get(0).toDataURL('image/jpeg')
+                style: api.photoStyle
             };
+            if (api.hasLiveCanvasCapture) {
+                data.canvasimg = videoSensor.get(0).toDataURL('image/jpeg', 0.95);
+            }
+            if (api.timelapse.frames && api.timelapse.frames.length > 0) {
+                data.timelapseFrames = JSON.stringify(api.timelapse.frames);
+            }
 
             if (api.photoStyle === PhotoStyle.COLLAGE) {
                 data.file = currentCollageFile;
@@ -726,11 +799,9 @@ const photoBooth = (function () {
                             'Taken collage photo number: ' + (result.current + 1) + ' / ' + api.collageLimit
                         );
 
-                        if (result.current + 1 < api.collageLimit) {
-                            photoboothTools.console.logDev('core: initialize Media.');
-                            photoboothPreview.initializeMedia();
-                            api.takingPic = false;
-                        }
+                        photoboothTools.console.logDev('core: initialize Media.');
+                        photoboothPreview.initializeMedia();
+                        api.takingPic = false;
 
                         if (config.collage.continuous) {
                             loaderMessage.append($('<p>').text(photoboothTools.getTranslation('wait_message')));
@@ -777,14 +848,35 @@ const photoBooth = (function () {
                             retakeButton.appendTo(loaderButtonBar).on('click', (event) => {
                                 event.stopPropagation();
                                 event.preventDefault();
+                                loaderButtonBar.empty();
                                 imageUrl = '';
-                                loaderMessage.html('<div style="color:#f8fafc; font-weight:600;"><i class="fa fa-spinner fa-spin"></i> Đang chuẩn bị chụp lại kiểu ' + currentIdx + '...</div>');
-                                api.deleteImage(result.collage_file, () => {
-                                    setTimeout(function () {
+                                api.clearLoaderImage();
+                                photoboothTools.overlay.close();
+                                loaderMessage.html(
+                                    '<div style="color:#f8fafc; font-weight:600;"><i class="fa fa-spinner fa-spin"></i> Đang chuẩn bị chụp lại kiểu ' +
+                                        currentIdx +
+                                        '...</div>'
+                                );
+
+                                api.takingPic = false;
+                                api.nextCollageNumber = result.current;
+
+                                // Xóa file tạm âm thầm (silent delete), không làm hiện popup overlay reload
+                                photoboothTools
+                                    .ajaxWithCsrf({
+                                        url: environment.publicFolders.api + '/deletePhoto.php',
+                                        method: 'POST',
+                                        data: { file: result.collage_file }
+                                    })
+                                    .always(() => {
+                                        api.takingPic = false;
                                         api.nextCollageNumber = result.current;
-                                        api.thrill(PhotoStyle.COLLAGE);
-                                    }, 400);
-                                });
+                                        photoboothTools.overlay.close();
+                                        photoboothPreview.initializeMedia();
+                                        setTimeout(() => {
+                                            api.thrill(PhotoStyle.COLLAGE);
+                                        }, 100);
+                                    });
                             });
 
                             // 2. Nút Xác nhận lấy ảnh (Confirm / Next or Process)
@@ -796,7 +888,10 @@ const photoBooth = (function () {
                                 takePictureButton.appendTo(loaderButtonBar).on('click', (event) => {
                                     event.stopPropagation();
                                     event.preventDefault();
+                                    loaderButtonBar.empty();
                                     imageUrl = '';
+                                    api.clearLoaderImage();
+                                    api.takingPic = false;
                                     api.thrill(PhotoStyle.COLLAGE);
                                 });
                                 remoteBuzzerClient.collageWaitForNext();
@@ -808,7 +903,9 @@ const photoBooth = (function () {
                                 collageProcessButton.appendTo(loaderButtonBar).on('click', (event) => {
                                     event.stopPropagation();
                                     event.preventDefault();
+                                    loaderButtonBar.empty();
                                     imageUrl = '';
+                                    api.clearLoaderImage();
                                     currentCollageFile = '';
                                     api.nextCollageNumber = 0;
                                     api.processPic(result);
@@ -1353,6 +1450,7 @@ const photoBooth = (function () {
         }
 
         // if image is a video render the qr code as image (video should be displayed over this)
+        const renderTs = Date.now();
         const imageUrl = photoboothTools.isVideoFile(filename)
             ? environment.publicFolders.api + '/qrcode.php?filename=' + filename
             : environment.publicFolders.images + '/' + filename;
@@ -1362,7 +1460,7 @@ const photoBooth = (function () {
             startPage.removeClass('stage--active');
 
             resultPage.css({
-                '--stage-background-image': `url(${imageUrl}?filter=${imgFilter})`
+                '--stage-background-image': `url(${imageUrl}?filter=${imgFilter}&v=${renderTs})`
             });
             resultPage.attr('data-img', filename);
             resultPage.addClass('stage--active');
@@ -1656,7 +1754,10 @@ const photoBooth = (function () {
         api.showMailForm(img);
     });
 
-    resultPage.on('click', function () {
+    resultPage.on('click', function (e) {
+        if ($(e.target).closest('#desktop-preset-bar, #confirmSuccessModal, #qrDeliveryModal, #result-gif-viewer').length) {
+            return;
+        }
         if (!filternav.hasClass('sidenav--open')) {
             rotaryController.focusSet(resultPage);
         }

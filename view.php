@@ -235,7 +235,7 @@ if ($eventTitleLines === []) {
                         📸 Ảnh Ghép Khung
                     </button>
                     <button type="button" id="tab-gif" onclick="switchMedia('gif')" style="padding:8px 18px; border-radius:999px; border:1px solid var(--viewer-border); background:#f8fafc; color:var(--viewer-font); font-weight:700; font-size:13px; cursor:pointer;">
-                        🎞️ Ảnh Động GIF
+                        🎞️ Ảnh Động (Tua nhanh)
                     </button>
                 </div>
             <?php endif; ?>
@@ -262,7 +262,7 @@ if ($eventTitleLines === []) {
                     <?php if ($hasGif): ?>
                         <a class="viewer__download" href="<?= htmlspecialchars($gifDownloadUrl) ?>" download="<?= htmlspecialchars($gifFile) ?>" style="background:#0284c7;">
                             <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
-                            Tải Ảnh Động GIF
+                            Tải Ảnh Động (Tua nhanh)
                         </a>
                     <?php endif; ?>
                 </div>

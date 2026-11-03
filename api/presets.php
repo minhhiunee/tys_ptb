@@ -91,7 +91,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Write to a temporary preview file in data/tmp
             $previewFileName = 'preview_' . $presetId . '_' . $amount . '_' . $file;
             $targetFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $previewFileName;
-            $success = $presetService->applyPreset($baseSourceFile, $targetFile, $presetId, $amount);
+
+            // Use optimized 1200px preview base image if available for sub-30ms responsiveness
+            $previewBaseFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'preview_base_' . $file;
+            $previewSource = file_exists($previewBaseFile) ? $previewBaseFile : $baseSourceFile;
+
+            $success = $presetService->applyPreset($previewSource, $targetFile, $presetId, $amount);
 
             if (!$success || !file_exists($targetFile)) {
                 throw new \Exception('Failed generating preset preview');
@@ -151,24 +156,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $currentMeta['preset_amount'] = $amount;
         $currentMeta['updated_at'] = time();
 
-        // Re-bake animated GIF with the new preset if original pose photos exist
+        $shouldBakeGif = !empty($_POST['bake_gif']) || ($action === 'bake_gif');
         $gifUrl = null;
-        if (!empty($currentMeta['original_photos']) && is_array($currentMeta['original_photos'])) {
-            $poseAbsPaths = [];
-            foreach ($currentMeta['original_photos'] as $poseName) {
-                $candidatePose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $poseName);
-                if (file_exists($candidatePose)) {
-                    $poseAbsPaths[] = $candidatePose;
+        $gifFileName = $currentMeta['gif_photo'] ?? ($sessionId . '.gif');
+        $gifTargetPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $gifFileName;
+        $gifBaked = false;
+
+        // Decouple heavy GIF re-baking: only re-bake when explicitly requested (e.g. user opens GIF viewer)
+        if ($shouldBakeGif) {
+            $gifProcessor = new \Photobooth\Processor\GifProcessor();
+
+            if (!empty($currentMeta['isCollage']) && !empty($currentMeta['layout'])) {
+                $layoutConfigPath = \Photobooth\Collage::getCollageConfigPath(
+                    (string) $currentMeta['layout'],
+                    (string) ($currentMeta['orientation'] ?? 'portrait')
+                );
+                if ($layoutConfigPath && is_file($layoutConfigPath)) {
+                    $layoutData = json_decode((string) file_get_contents($layoutConfigPath), true);
+                    if (is_array($layoutData) && !empty($layoutData['layout'])) {
+                        $origPoses = is_array($currentMeta['original_photos'] ?? null) ? $currentMeta['original_photos'] : [];
+                        $tlByPose = is_array($currentMeta['timelapse_by_pose'] ?? null) ? $currentMeta['timelapse_by_pose'] : [];
+                        $poseCount = max(1, count($origPoses), count($tlByPose));
+                        $poseFrameSequences = [];
+                        for ($p = 0; $p < $poseCount; $p++) {
+                            $seq = [];
+                            if (!empty($tlByPose[$p]) && is_array($tlByPose[$p])) {
+                                foreach ($tlByPose[$p] as $tlName) {
+                                    $absTl = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $tlName);
+                                    if (is_file($absTl)) {
+                                        $seq[] = $absTl;
+                                    }
+                                }
+                            }
+                            if (isset($origPoses[$p])) {
+                                $absPose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $origPoses[$p]);
+                                if (is_file($absPose)) {
+                                    $seq[] = $absPose;
+                                }
+                            }
+                            if (!empty($seq)) {
+                                $poseFrameSequences[$p] = $seq;
+                            }
+                        }
+                        if (!empty($poseFrameSequences)) {
+                            $gifBaked = $gifProcessor->createFramedTimelapseGif(
+                                $poseFrameSequences,
+                                $layoutData,
+                                $gifTargetPath,
+                                140,
+                                480,
+                                $presetId,
+                                $amount,
+                                $baseSourceFile
+                            );
+                        }
+                    }
                 }
             }
-            if (count($poseAbsPaths) > 1) {
-                $gifFileName = $currentMeta['gif_photo'] ?? ($sessionId . '.gif');
-                $gifTargetPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $gifFileName;
-                $gifProcessor = new \Photobooth\Processor\GifProcessor();
-                if ($gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 450, 720, $presetId, $amount)) {
-                    $currentMeta['gif_photo'] = $gifFileName;
-                    $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . time();
+
+            if (!$gifBaked) {
+                $gifSourceNames = !empty($currentMeta['timelapse_photos']) && is_array($currentMeta['timelapse_photos'])
+                    ? $currentMeta['timelapse_photos']
+                    : ($currentMeta['original_photos'] ?? []);
+                if (is_array($gifSourceNames) && !empty($gifSourceNames)) {
+                    $poseAbsPaths = [];
+                    foreach ($gifSourceNames as $poseName) {
+                        $candidatePose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $poseName);
+                        if (file_exists($candidatePose)) {
+                            $poseAbsPaths[] = $candidatePose;
+                        }
+                    }
+                    if (!empty($poseAbsPaths)) {
+                        $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 140, 480, $presetId, $amount);
+                    }
                 }
+            }
+
+            if ($gifBaked) {
+                $currentMeta['gif_photo'] = $gifFileName;
+                $currentMeta['gif_baked_preset'] = $presetId;
+                $currentMeta['gif_dirty'] = false;
+                $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . time();
+            }
+        } else {
+            // Mark whether GIF needs re-baking when user switches to GIF viewer
+            $currentMeta['gif_dirty'] = ($presetId !== ($currentMeta['gif_baked_preset'] ?? 'original'));
+            if (file_exists($gifTargetPath)) {
+                $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . time();
             }
         }
 

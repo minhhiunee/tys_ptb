@@ -69,8 +69,10 @@ class SyncQueueService
 
         $this->logger->debug("Session queued for sync: {$sessionId}");
 
-        // If auto-sync is enabled and a remote endpoint is configured, attempt immediate non-blocking sync
-        if (!empty($this->config['sync']['auto_sync']) && !empty($this->getRemoteEndpoint())) {
+        // If auto-sync is enabled or Cloud Web mode (Hướng 2) is active, attempt immediate sync
+        $netCfg = $this->getNetworkModeConfig();
+        $isCloudMode = ($netCfg['mode'] ?? '') === 'cloud_web' && !empty($this->getRemoteEndpoint());
+        if ((!empty($this->config['sync']['auto_sync']) || $isCloudMode) && !empty($this->getRemoteEndpoint())) {
             $this->syncSession($sessionId);
             $queue = $this->loadQueue();
             return $queue[$sessionId] ?? $record;
@@ -80,16 +82,53 @@ class SyncQueueService
     }
 
     /**
-     * Resolve remote sync endpoint for the active environment
+     * Load dynamic network_mode.json config
+     */
+    public function getNetworkModeConfig(): array
+    {
+        $file = PathUtility::getAbsolutePath('config/network_mode.json');
+        if (file_exists($file)) {
+            $raw = @file_get_contents($file);
+            $decoded = $raw ? json_decode($raw, true) : null;
+            if (is_array($decoded)) {
+                return $decoded;
+            }
+        }
+        return [];
+    }
+
+    /**
+     * Resolve remote sync endpoint for the active environment or Cloud Web mode
      */
     public function getRemoteEndpoint(): string
     {
+        $netCfg = $this->getNetworkModeConfig();
+        $cloudUrl = rtrim(trim((string) ($netCfg['cloud_url'] ?? '')), '/');
+        if ($cloudUrl !== '') {
+            if (str_ends_with($cloudUrl, '.php')) {
+                return $cloudUrl;
+            }
+            return $cloudUrl . '/api/syncReceive.php';
+        }
+
         $env = $this->getEnvironmentProfile();
         $endpoints = $this->config['sync']['endpoints'] ?? [];
         if (is_array($endpoints) && !empty($endpoints[$env])) {
             return trim((string) $endpoints[$env]);
         }
         return trim((string) ($this->config['sync']['endpoint'] ?? ''));
+    }
+
+    /**
+     * Resolve active API key for Cloud sync
+     */
+    protected function getApiKey(): string
+    {
+        $netCfg = $this->getNetworkModeConfig();
+        if (!empty($netCfg['cloud_api_key'])) {
+            return trim((string) $netCfg['cloud_api_key']);
+        }
+        return (string) ($this->config['sync']['api_key'] ?? '');
     }
 
     /**
@@ -126,19 +165,30 @@ class SyncQueueService
         $item['attempts'] = ((int) ($item['attempts'] ?? 0)) + 1;
         $item['updated_at'] = time();
 
-        $apiKey = (string) ($this->config['sync']['api_key'] ?? '');
+        $apiKey = $this->getApiKey();
+        $netCfg = $this->getNetworkModeConfig();
+        $autoCompress = (bool) ($netCfg['auto_compress_cloud'] ?? true);
+        $tempCompressedFile = null;
+
         $postFields = [
             'session_id' => $sessionId,
             'environment' => $this->getEnvironmentProfile(),
             'metadata' => json_encode($item['metadata'] ?? [], JSON_UNESCAPED_UNICODE),
         ];
 
-        // Attach final photo
+        // Attach final photo (optionally compressed to fast Full HD for instant 4G/Cloud upload)
         $imagesDir = FolderEnum::IMAGES->absolute();
         if (!empty($item['final_photo'])) {
             $finalPath = $imagesDir . DIRECTORY_SEPARATOR . basename((string) $item['final_photo']);
             if (is_file($finalPath)) {
-                $postFields['final_photo'] = new \CURLFile($finalPath, 'image/jpeg', basename($finalPath));
+                $uploadPath = $finalPath;
+                if ($autoCompress && filesize($finalPath) > 900 * 1024) {
+                    $tempCompressedFile = $this->createCompressedCloudCopy($finalPath);
+                    if ($tempCompressedFile !== null) {
+                        $uploadPath = $tempCompressedFile;
+                    }
+                }
+                $postFields['final_photo'] = new \CURLFile($uploadPath, 'image/jpeg', basename($finalPath));
             }
         }
 
@@ -167,6 +217,10 @@ class SyncQueueService
         $httpCode = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $curlError = curl_error($ch);
         curl_close($ch);
+
+        if ($tempCompressedFile !== null && file_exists($tempCompressedFile)) {
+            @unlink($tempCompressedFile);
+        }
 
         if ($responseBody !== false && $httpCode >= 200 && $httpCode < 300) {
             $decoded = json_decode((string) $responseBody, true);
@@ -305,6 +359,47 @@ class SyncQueueService
             json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
             LOCK_EX
         ) !== false;
+    }
+
+    /**
+     * Create an optimized Full-HD JPEG copy for rapid Cloud upload without modifying the local print file
+     */
+    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1920, int $quality = 88): ?string
+    {
+        try {
+            $info = @getimagesize($sourcePath);
+            if (!$info) {
+                return null;
+            }
+            [$w, $h, $type] = $info;
+            $src = match ($type) {
+                IMAGETYPE_JPEG => @imagecreatefromjpeg($sourcePath),
+                IMAGETYPE_PNG => @imagecreatefrompng($sourcePath),
+                default => false,
+            };
+            if (!$src) {
+                return null;
+            }
+
+            $scale = min(1.0, $maxDim / max($w, $h));
+            $nw = max(1, (int) round($w * $scale));
+            $nh = max(1, (int) round($h * $scale));
+
+            $dst = imagecreatetruecolor($nw, $nh);
+            if (!$dst) {
+                imagedestroy($src);
+                return null;
+            }
+            imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
+            $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_cloud_' . uniqid('', true) . '.jpg';
+            $ok = imagejpeg($dst, $tmpFile, $quality);
+            imagedestroy($src);
+            imagedestroy($dst);
+
+            return ($ok && file_exists($tmpFile)) ? $tmpFile : null;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }
 

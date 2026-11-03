@@ -87,9 +87,7 @@ class MockCameraProvider extends AbstractCameraProvider
             }
 
             if (!empty($demoImages)) {
-                // Pick deterministically by collage pose index if provided, or randomly
-                $poseIdx = isset($options['collageNumber']) ? (int) $options['collageNumber'] : array_rand($demoImages);
-                $chosen = $demoImages[$poseIdx % count($demoImages)];
+                $chosen = $demoImages[array_rand($demoImages)];
                 $ext = strtolower(pathinfo($chosen, PATHINFO_EXTENSION));
 
                 if (in_array($ext, ['jpg', 'jpeg'], true)) {

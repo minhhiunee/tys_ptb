@@ -18,6 +18,257 @@ class GifProcessor
     }
 
     /**
+     * Create a Korean-style Framed Time-Lapse GIF where each slot inside the Frame plays its own
+     * sped-up 10s countdown video simultaneously, overlaid with the pristine Frame PNG.
+     *
+     * @param array<int, string[]> $poseFrameSequences Per-pose array of time-lapse frame file paths
+     * @param array $layoutData Parsed layout JSON (width, height, frame, background_color, layout)
+     * @param string $targetGifPath Output path for the animated .gif
+     * @param int $delayMs Frame duration in milliseconds (default: 140ms ≈ 7 fps speedup)
+     * @param int $maxDimension Maximum output height/width in pixels (optimized default: 480px)
+     * @param string|null $presetId Optional color preset ID to apply to slot photos
+     * @param int $presetAmount Optional preset intensity (0-100)
+     */
+    public function createFramedTimelapseGif(
+        array $poseFrameSequences,
+        array $layoutData,
+        string $targetGifPath,
+        int $delayMs = 140,
+        int $maxDimension = 480,
+        ?string $presetId = null,
+        int $presetAmount = 100,
+        ?string $baseCollageImagePath = null
+    ): bool {
+        $slots = $layoutData['layout'] ?? [];
+        $fullW = (int) ($layoutData['width'] ?? 0);
+        $fullH = (int) ($layoutData['height'] ?? 0);
+        if (empty($slots) || $fullW <= 0 || $fullH <= 0 || empty($poseFrameSequences)) {
+            return false;
+        }
+
+        $scale = min(1.0, $maxDimension / max($fullW, $fullH));
+        $outW = max(1, (int) round($fullW * $scale));
+        $outH = max(1, (int) round($fullH * $scale));
+
+        $presetService = (!empty($presetId) && $presetId !== 'original' && $presetId !== 'none' && $presetAmount > 0)
+            ? PresetService::getInstance()
+            : null;
+
+        $tempSynthFiles = [];
+        $tempPresetFiles = [];
+        $tempTickFiles = [];
+        $scaledFrameImg = null;
+        $baseCanvas = null;
+
+        try {
+            // Normalize each pose's sequence and synthesize motion if a pose only has 1 static frame
+            $normalizedPoses = [];
+            $maxSeqCount = 0;
+            foreach (array_values($poseFrameSequences) as $pIdx => $seq) {
+                $validSeq = [];
+                if (is_array($seq)) {
+                    foreach ($seq as $fPath) {
+                        if (is_string($fPath) && is_file($fPath) && filesize($fPath) > 0) {
+                            $validSeq[] = $fPath;
+                        }
+                    }
+                }
+                if (count($validSeq) === 1) {
+                    $syn = $this->synthesizeTimelapseFromSingleFrame($validSeq[0], 480);
+                    if (!empty($syn)) {
+                        foreach ($syn as $sf) {
+                            $tempSynthFiles[] = $sf;
+                        }
+                        $validSeq = $syn;
+                    }
+                }
+                if (!empty($validSeq)) {
+                    // Apply color preset once per unique frame if requested
+                    if ($presetService !== null && $presetId !== null) {
+                        $coloredSeq = [];
+                        foreach ($validSeq as $fIdx => $origFramePath) {
+                            $tmpPresetFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_fpreset_%d_%d_%s.jpg', $pIdx, $fIdx, uniqid());
+                            if ($presetService->applyPreset($origFramePath, $tmpPresetFile, $presetId, $presetAmount) && is_file($tmpPresetFile)) {
+                                $tempPresetFiles[] = $tmpPresetFile;
+                                $coloredSeq[] = $tmpPresetFile;
+                            } else {
+                                $coloredSeq[] = $origFramePath;
+                            }
+                        }
+                        $validSeq = $coloredSeq;
+                    }
+                    $normalizedPoses[] = $validSeq;
+                    $maxSeqCount = max($maxSeqCount, count($validSeq));
+                }
+            }
+
+            if (empty($normalizedPoses)) {
+                return false;
+            }
+
+            // Pre-scale Frame PNG overlay once to ($outW, $outH)
+            $frameRelPath = $layoutData['frame'] ?? '';
+            if ($frameRelPath !== '') {
+                $frameAbsPath = \Photobooth\Utility\PathUtility::getAbsolutePath((string) $frameRelPath);
+                if (is_file($frameAbsPath)) {
+                    $rawFrame = @imagecreatefrompng($frameAbsPath);
+                    if ($rawFrame instanceof \GdImage) {
+                        $scaledFrameImg = imagecreatetruecolor($outW, $outH);
+                        if ($scaledFrameImg instanceof \GdImage) {
+                            imagealphablending($scaledFrameImg, false);
+                            imagesavealpha($scaledFrameImg, true);
+                            $transparent = imagecolorallocatealpha($scaledFrameImg, 0, 0, 0, 127);
+                            imagefilledrectangle($scaledFrameImg, 0, 0, $outW, $outH, $transparent);
+                            imagecopyresampled(
+                                $scaledFrameImg,
+                                $rawFrame,
+                                0,
+                                0,
+                                0,
+                                0,
+                                $outW,
+                                $outH,
+                                imagesx($rawFrame),
+                                imagesy($rawFrame)
+                            );
+                        }
+                        imagedestroy($rawFrame);
+                    }
+                }
+            }
+
+            // Prepare base canvas: prefer pristine final collage image to perfectly match colors, background, and borders
+            if (!empty($baseCollageImagePath) && file_exists($baseCollageImagePath)) {
+                $rawBase = @imagecreatefromjpeg($baseCollageImagePath);
+                if ($rawBase instanceof \GdImage) {
+                    $baseCanvas = imagecreatetruecolor($outW, $outH);
+                    if ($baseCanvas instanceof \GdImage) {
+                        imagecopyresampled($baseCanvas, $rawBase, 0, 0, 0, 0, $outW, $outH, imagesx($rawBase), imagesy($rawBase));
+                    }
+                    imagedestroy($rawBase);
+                }
+            }
+
+            $totalTicks = max(8, min(14, $maxSeqCount));
+
+            // Cache GdImage resources per pose frame path to avoid re-decoding the same frame
+            $gdCache = [];
+
+            for ($t = 0; $t < $totalTicks; $t++) {
+                $canvas = imagecreatetruecolor($outW, $outH);
+                if (!$canvas instanceof \GdImage) {
+                    continue;
+                }
+                if ($baseCanvas instanceof \GdImage) {
+                    imagecopy($canvas, $baseCanvas, 0, 0, 0, 0, $outW, $outH);
+                } else {
+                    $white = imagecolorallocate($canvas, 255, 255, 255);
+                    imagefilledrectangle($canvas, 0, 0, $outW, $outH, $white);
+                }
+
+                foreach ($slots as $slotIdx => $slotDef) {
+                    if (!is_array($slotDef) || count($slotDef) < 4) {
+                        continue;
+                    }
+                    $dstX = (int) round(((float) $slotDef[0]) * $scale);
+                    $dstY = (int) round(((float) $slotDef[1]) * $scale);
+                    $dstW = max(1, (int) round(((float) $slotDef[2]) * $scale));
+                    $dstH = max(1, (int) round(((float) $slotDef[3]) * $scale));
+
+                    $poseSeq = $normalizedPoses[$slotIdx % count($normalizedPoses)];
+                    $seqLen = count($poseSeq);
+                    $fIdx = ($totalTicks > 1) ? (int) round(($t / ($totalTicks - 1)) * ($seqLen - 1)) : 0;
+                    $fIdx = max(0, min($seqLen - 1, $fIdx));
+                    $framePath = $poseSeq[$fIdx];
+
+                    if (!isset($gdCache[$framePath])) {
+                        $loaded = @imagecreatefromjpeg($framePath);
+                        if (!$loaded) {
+                            $loaded = @imagecreatefrompng($framePath);
+                        }
+                        $gdCache[$framePath] = $loaded ?: null;
+                    }
+
+                    $srcIm = $gdCache[$framePath];
+                    if ($srcIm instanceof \GdImage) {
+                        $srcW = imagesx($srcIm);
+                        $srcH = imagesy($srcIm);
+                        // Center-crop (aspect-fill) to match slot aspect ratio
+                        $slotAspect = $dstW / $dstH;
+                        $srcAspect = $srcW / $srcH;
+                        if ($srcAspect > $slotAspect) {
+                            $cropH = $srcH;
+                            $cropW = max(1, (int) round($srcH * $slotAspect));
+                            $cropX = (int) round(($srcW - $cropW) / 2);
+                            $cropY = 0;
+                        } else {
+                            $cropW = $srcW;
+                            $cropH = max(1, (int) round($srcW / $slotAspect));
+                            $cropX = 0;
+                            $cropY = (int) round(($srcH - $cropH) / 2);
+                        }
+                        imagecopyresampled($canvas, $srcIm, $dstX, $dstY, $cropX, $cropY, $dstW, $dstH, $cropW, $cropH);
+                    }
+                }
+
+                // Overlay transparent Frame PNG on top of the slots
+                if ($scaledFrameImg instanceof \GdImage) {
+                    imagealphablending($canvas, true);
+                    imagecopy($canvas, $scaledFrameImg, 0, 0, 0, 0, $outW, $outH);
+                }
+
+                $tickPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_framed_tick_%02d_%s.jpg', $t, uniqid());
+                if (imagejpeg($canvas, $tickPath, 88)) {
+                    $tempTickFiles[] = $tickPath;
+                    // Hold the final snapped pose for 1 extra tick at the end of the speedup loop
+                    if ($t === $totalTicks - 1) {
+                        $tempTickFiles[] = $tickPath;
+                    }
+                }
+                imagedestroy($canvas);
+            }
+
+            foreach ($gdCache as $cachedIm) {
+                if ($cachedIm instanceof \GdImage) {
+                    imagedestroy($cachedIm);
+                }
+            }
+
+            if (empty($tempTickFiles)) {
+                return false;
+            }
+
+            $targetDir = dirname($targetGifPath);
+            if (!is_dir($targetDir)) {
+                @mkdir($targetDir, 0755, true);
+            }
+
+            if (extension_loaded('imagick')) {
+                if ($this->encodeWithImagick($tempTickFiles, $targetGifPath, $delayMs)) {
+                    return true;
+                }
+            }
+
+            return $this->encodeWithGdGif89a($tempTickFiles, $targetGifPath, $delayMs);
+        } catch (\Throwable $e) {
+            $this->logger->error('GifProcessor createFramedTimelapseGif error: ' . $e->getMessage());
+            return false;
+        } finally {
+            if ($scaledFrameImg instanceof \GdImage) {
+                imagedestroy($scaledFrameImg);
+            }
+            if ($baseCanvas instanceof \GdImage) {
+                imagedestroy($baseCanvas);
+            }
+            foreach (array_unique(array_merge($tempSynthFiles, $tempPresetFiles, $tempTickFiles)) as $f) {
+                if (is_string($f) && file_exists($f)) {
+                    @unlink($f);
+                }
+            }
+        }
+    }
+
+    /**
      * Create an animated GIF from multiple image files.
      *
      * @param string[] $sourceFrames Ordered list of image file paths
@@ -31,8 +282,8 @@ class GifProcessor
     public function createAnimatedGif(
         array $sourceFrames,
         string $targetGifPath,
-        int $delayMs = 450,
-        int $maxDimension = 720,
+        int $delayMs = 140,
+        int $maxDimension = 480,
         ?string $presetId = null,
         int $presetAmount = 100
     ): bool {
@@ -48,11 +299,6 @@ class GifProcessor
             return false;
         }
 
-        // If only 1 frame exists, duplicate it or create a subtle 2-frame pulse so GIF is still valid
-        if (count($validFrames) === 1) {
-            $validFrames[] = $validFrames[0];
-        }
-
         $targetDir = dirname($targetGifPath);
         if (!is_dir($targetDir)) {
             @mkdir($targetDir, 0755, true);
@@ -60,14 +306,28 @@ class GifProcessor
 
         // Prepare resized (and optionally preset-colored) temp frames
         $tempFrames = [];
+        $synthesizedFrames = [];
         $presetService = (!empty($presetId) && $presetId !== 'original' && $presetId !== 'none' && $presetAmount > 0)
             ? PresetService::getInstance()
             : null;
 
         try {
+            // If only 1 frame exists (e.g. single photo without live video stream), synthesize an 8-frame time-lapse zoom + flash sequence
+            if (count($validFrames) === 1) {
+                $synthesizedFrames = $this->synthesizeTimelapseFromSingleFrame($validFrames[0], $maxDimension);
+                if (!empty($synthesizedFrames)) {
+                    $validFrames = $synthesizedFrames;
+                } else {
+                    $validFrames[] = $validFrames[0];
+                }
+            }
+
+            $targetW = null;
+            $targetH = null;
+
             foreach ($validFrames as $idx => $framePath) {
                 $tempResized = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_gif_frame_' . uniqid($idx . '_', true) . '.jpg';
-                if ($this->resizeFrameForGif($framePath, $tempResized, $maxDimension)) {
+                if ($this->resizeFrameForGif($framePath, $tempResized, $maxDimension, $targetW, $targetH)) {
                     if ($presetService !== null && $presetId !== null) {
                         $presetService->applyPreset($tempResized, $tempResized, $presetId, $presetAmount);
                     }
@@ -98,13 +358,75 @@ class GifProcessor
                     @unlink($tmp);
                 }
             }
+            foreach ($synthesizedFrames as $syn) {
+                if (file_exists($syn)) {
+                    @unlink($syn);
+                }
+            }
         }
+    }
+
+    /**
+     * Synthesize an 8-frame fast-forward motion + shutter-flash sequence when only 1 static frame is available
+     *
+     * @return string[]
+     */
+    protected function synthesizeTimelapseFromSingleFrame(string $sourcePath, int $maxDimension): array
+    {
+        $info = @getimagesize($sourcePath);
+        if (!$info) {
+            return [];
+        }
+        [$origW, $origH, $type] = $info;
+        $srcImg = match ($type) {
+            IMAGETYPE_JPEG => @imagecreatefromjpeg($sourcePath),
+            IMAGETYPE_PNG => @imagecreatefrompng($sourcePath),
+            IMAGETYPE_GIF => @imagecreatefromgif($sourcePath),
+            default => false,
+        };
+        if (!$srcImg) {
+            return [];
+        }
+
+        $scale = min(1.0, $maxDimension / max($origW, $origH));
+        $outW = max(1, (int) round($origW * $scale));
+        $outH = max(1, (int) round($origH * $scale));
+
+        $frames = [];
+        // 6 progressive zoom-out steps (simulating camera framing/posing lead-up) + 1 shutter flash + 2 final hold frames
+        $zoomSteps = [1.22, 1.18, 1.14, 1.10, 1.06, 1.02, 1.00, 1.00, 1.00];
+        foreach ($zoomSteps as $stepIdx => $zoom) {
+            $canvas = imagecreatetruecolor($outW, $outH);
+            if (!$canvas) {
+                continue;
+            }
+            $cropW = max(1, (int) round($origW / $zoom));
+            $cropH = max(1, (int) round($origH / $zoom));
+            $srcX = (int) round(($origW - $cropW) / 2);
+            $srcY = (int) round(($origH - $cropH) / 2);
+
+            imagecopyresampled($canvas, $srcImg, 0, 0, $srcX, $srcY, $outW, $outH, $cropW, $cropH);
+
+            // Step 6 is the shutter flash moment
+            if ($stepIdx === 6) {
+                imagefilter($canvas, IMG_FILTER_BRIGHTNESS, 55);
+            }
+
+            $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_syn_tl_' . uniqid($stepIdx . '_', true) . '.jpg';
+            if (imagejpeg($canvas, $tmpFile, 90)) {
+                $frames[] = $tmpFile;
+            }
+            imagedestroy($canvas);
+        }
+
+        imagedestroy($srcImg);
+        return $frames;
     }
 
     /**
      * Resize a single image frame down to $maxDimension for fast GIF encoding
      */
-    protected function resizeFrameForGif(string $sourcePath, string $destPath, int $maxDimension): bool
+    protected function resizeFrameForGif(string $sourcePath, string $destPath, int $maxDimension, ?int &$lockedW = null, ?int &$lockedH = null): bool
     {
         $info = @getimagesize($sourcePath);
         if (!$info) {
@@ -116,9 +438,16 @@ class GifProcessor
             return false;
         }
 
-        $scale = min(1.0, $maxDimension / max($origW, $origH));
-        $newW = max(1, (int) round($origW * $scale));
-        $newH = max(1, (int) round($origH * $scale));
+        if ($lockedW !== null && $lockedH !== null) {
+            $newW = $lockedW;
+            $newH = $lockedH;
+        } else {
+            $scale = min(1.0, $maxDimension / max($origW, $origH));
+            $newW = max(1, (int) round($origW * $scale));
+            $newH = max(1, (int) round($origH * $scale));
+            $lockedW = $newW;
+            $lockedH = $newH;
+        }
 
         $srcImg = match ($type) {
             IMAGETYPE_JPEG => @imagecreatefromjpeg($sourcePath),
@@ -198,8 +527,8 @@ class GifProcessor
             if (!$im) {
                 continue;
             }
-            // Convert truecolor to palette for clean GIF frame
-            imagetruecolortopalette($im, true, 256);
+            // Convert truecolor to palette for clean GIF frame (dither=false for 4x faster CPU encoding)
+            imagetruecolortopalette($im, false, 256);
             ob_start();
             imagegif($im);
             $rawGif = ob_get_clean();

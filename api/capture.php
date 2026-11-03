@@ -80,13 +80,21 @@ try {
             throw new \Exception('Invalid style provided.');
     }
 
+    $hasValidCanvasImg = !empty($_POST['canvasimg'])
+        && is_string($_POST['canvasimg'])
+        && strpos($_POST['canvasimg'], 'data:image/') === 0
+        && strlen($_POST['canvasimg']) > 5000;
+
     if ($_POST['style'] === 'video') {
         $captureHandler->captureCmd = $config['commands']['take_video'];
         $captureHandler->captureWithCmd();
+    } elseif ($config['preview']['mode'] === 'device_cam' && $config['preview']['camTakesPic'] && $hasValidCanvasImg) {
+        $captureHandler->flipImage = $config['preview']['flip'];
+        $captureHandler->captureCanvas($_POST['canvasimg']);
     } elseif ($config['dev']['demo_images']) {
         $captureHandler->captureDemo();
     } elseif ($config['preview']['mode'] === 'device_cam' && $config['preview']['camTakesPic']) {
-        if (!isset($_POST['canvasimg'])) {
+        if (!$hasValidCanvasImg) {
             throw new \Exception('No canvas data provided!');
         }
         $captureHandler->flipImage = $config['preview']['flip'];
@@ -101,6 +109,58 @@ try {
         }
         $captureHandler->captureWithCmd();
     }
+    // Save fast-forward time-lapse frames captured during countdown + cheese for this pose
+    if (!empty($_POST['timelapseFrames']) && is_string($_POST['timelapseFrames'])) {
+        $tlSessionId = pathinfo($file, PATHINFO_FILENAME);
+        $tlPoseIdx = ($_POST['style'] === 'collage' && isset($_POST['collageNumber'])) ? (int) $_POST['collageNumber'] : 0;
+        $tlDir = FolderEnum::TEMP->absolute();
+
+        // Remove any previous time-lapse frames for this specific pose (in case of retake)
+        $existingTl = glob($tlDir . DIRECTORY_SEPARATOR . sprintf('tl_%s_p%02d_*.jpg', $tlSessionId, $tlPoseIdx)) ?: [];
+        foreach ($existingTl as $oldTlFile) {
+            @unlink($oldTlFile);
+        }
+
+        $decodedTl = json_decode($_POST['timelapseFrames'], true);
+        if (is_array($decodedTl)) {
+            $savedCount = 0;
+            foreach ($decodedTl as $rawDataUrl) {
+                if (!is_string($rawDataUrl) || !str_starts_with($rawDataUrl, 'data:image/')) {
+                    continue;
+                }
+                $commaPos = strpos($rawDataUrl, ',');
+                if ($commaPos === false) {
+                    continue;
+                }
+                $bin = base64_decode(substr($rawDataUrl, $commaPos + 1), true);
+                if ($bin === false || strlen($bin) < 200) {
+                    continue;
+                }
+                $tlFilePath = $tlDir . DIRECTORY_SEPARATOR . sprintf('tl_%s_p%02d_%03d.jpg', $tlSessionId, $tlPoseIdx, $savedCount);
+                if (@file_put_contents($tlFilePath, $bin) !== false) {
+                    if (($config['preview']['flip'] ?? 'off') !== 'off') {
+                        $tlIm = @imagecreatefromjpeg($tlFilePath);
+                        if ($tlIm instanceof \GdImage) {
+                            if ($config['preview']['flip'] === 'flip-horizontal') {
+                                imageflip($tlIm, IMG_FLIP_HORIZONTAL);
+                            } elseif ($config['preview']['flip'] === 'flip-vertical') {
+                                imageflip($tlIm, IMG_FLIP_VERTICAL);
+                            } elseif ($config['preview']['flip'] === 'flip-both') {
+                                imageflip($tlIm, IMG_FLIP_BOTH);
+                            }
+                            imagejpeg($tlIm, $tlFilePath, 85);
+                            imagedestroy($tlIm);
+                        }
+                    }
+                    $savedCount++;
+                    if ($savedCount >= 30) {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     // send image to frontend
     echo json_encode($captureHandler->returnData());
     exit();

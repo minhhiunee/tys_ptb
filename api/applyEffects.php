@@ -102,18 +102,76 @@ try {
     $vars['sessionId'] = pathinfo($vars['fileName'], PATHINFO_FILENAME);
     $vars['gifFileName'] = null;
     $vars['savedOriginalPoses'] = [];
+    $vars['savedTimelapseFrames'] = [];
+    $vars['savedTimelapseByPose'] = [];
+    $tlSourcePaths = [];
+    $tlByPosePaths = [];
+
+    // Load existing metadata if re-running applyEffects (e.g. from filter sidebar on Result screen)
+    $existingMetaPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json';
+    $existingMeta = [];
+    if (is_file($existingMetaPath)) {
+        $decodedExisting = json_decode((string) file_get_contents($existingMetaPath), true);
+        if (is_array($decodedExisting)) {
+            $existingMeta = $decodedExisting;
+        }
+    }
+
+    // Collect fast-forward time-lapse frames recorded during 10s countdown + cheese, grouped by pose
+    $tlTempPattern = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'tl_' . $vars['sessionId'] . '_p*.jpg';
+    $tlTempFiles = glob($tlTempPattern) ?: [];
+    if (!empty($tlTempFiles)) {
+        natsort($tlTempFiles);
+        $tlTempFiles = array_values($tlTempFiles);
+        foreach ($tlTempFiles as $tlIdx => $tlTempPath) {
+            if (is_file($tlTempPath) && filesize($tlTempPath) > 0) {
+                $baseTl = basename($tlTempPath);
+                $poseNum = 0;
+                if (preg_match('/_p(\d+)_/', $baseTl, $m)) {
+                    $poseNum = (int) $m[1];
+                }
+                $tlSaveName = sprintf('orig_tl_%s_p%02d_%03d.jpg', $vars['sessionId'], $poseNum, $tlIdx);
+                $tlSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $tlSaveName;
+                if (@copy($tlTempPath, $tlSaveDest)) {
+                    $vars['savedTimelapseFrames'][] = $tlSaveName;
+                    $vars['savedTimelapseByPose'][$poseNum][] = $tlSaveName;
+                    $tlSourcePaths[] = $tlSaveDest;
+                    $tlByPosePaths[$poseNum][] = $tlSaveDest;
+                }
+                @unlink($tlTempPath);
+            }
+        }
+    } elseif (!empty($existingMeta['timelapse_by_pose']) && is_array($existingMeta['timelapse_by_pose'])) {
+        $vars['savedTimelapseFrames'] = $existingMeta['timelapse_photos'] ?? [];
+        $vars['savedTimelapseByPose'] = $existingMeta['timelapse_by_pose'];
+        foreach ($vars['savedTimelapseByPose'] as $pNum => $names) {
+            if (is_array($names)) {
+                foreach ($names as $n) {
+                    $absN = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $n);
+                    if (is_file($absN)) {
+                        $tlByPosePaths[(int) $pNum][] = $absN;
+                        $tlSourcePaths[] = $absN;
+                    }
+                }
+            }
+        }
+    }
 
     if ($vars['isCollage']) {
         [$vars['collageSrcImagePaths'], $vars['srcImages']] = Collage::getCollageFiles($config['collage'], $vars['tmpFile'], $vars['fileName'], $vars['srcImages']);
 
-        // Preserve raw pose files so original shots are never lost and can be used for GIF re-baking
+        // Preserve raw pose files (or restore them if re-running filter on Result screen after unlink)
         foreach ($vars['collageSrcImagePaths'] as $poseIdx => $posePath) {
+            $poseSaveName = 'orig_pose_' . ($poseIdx + 1) . '_' . $vars['fileName'];
+            $poseSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $poseSaveName;
             if (is_string($posePath) && file_exists($posePath)) {
-                $poseSaveName = 'orig_pose_' . ($poseIdx + 1) . '_' . $vars['fileName'];
-                $poseSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $poseSaveName;
                 if (@copy($posePath, $poseSaveDest)) {
                     $vars['savedOriginalPoses'][] = $poseSaveName;
                 }
+            } elseif (file_exists($poseSaveDest)) {
+                // Restore sub-file to data/tmp so Collage::createCollage succeeds on filter re-application
+                @copy($poseSaveDest, $posePath);
+                $vars['savedOriginalPoses'][] = $poseSaveName;
             }
         }
 
@@ -127,22 +185,39 @@ try {
             [$imageHandler, $vars, $config] = $processor->postCollageProcessing($imageHandler, $vars, $config);
         }
 
-        // Generate Animated GIF from the collage poses
-        $gifFileName = $vars['sessionId'] . '.gif';
-        $gifTargetPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $gifFileName;
-        $gifDelayMs = (int) ($config['collage']['gif_delay_ms'] ?? 450);
-        $gifMaxDim = (int) ($config['collage']['gif_max_dimension'] ?? 720);
-        $gifProcessor = new \Photobooth\Processor\GifProcessor();
-        if ($gifProcessor->createAnimatedGif(
-            $vars['collageSrcImagePaths'],
-            $gifTargetPath,
-            $gifDelayMs,
-            $gifMaxDim,
-            $vars['preset'],
-            $vars['preset_amount'] ?? 100
-        )) {
-            $vars['gifFileName'] = $gifFileName;
+        // Load layout config for Framed Time-Lapse GIF composition
+        $layoutConfigPath = Collage::getCollageConfigPath($config['collage']['layout'], $config['collage']['orientation'] ?? 'portrait');
+        $framePath = null;
+        $layoutData = null;
+        if ($layoutConfigPath && file_exists($layoutConfigPath)) {
+            $decodedLayout = json_decode((string)file_get_contents($layoutConfigPath), true);
+            if (is_array($decodedLayout)) {
+                $layoutData = $decodedLayout;
+                if (!empty($layoutData['frame'])) {
+                    $framePath = $layoutData['frame'];
+                }
+            }
         }
+
+        // Build per-pose frame sequences so each slot inside the Frame animates its own sped-up 10s countdown video
+        $poseFrameSequences = [];
+        $poseCount = max(1, count($vars['savedOriginalPoses']));
+        for ($p = 0; $p < $poseCount; $p++) {
+            $seq = $tlByPosePaths[$p] ?? [];
+            if (isset($vars['savedOriginalPoses'][$p])) {
+                $finalPoseAbs = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $vars['savedOriginalPoses'][$p];
+                if (is_file($finalPoseAbs)) {
+                    $seq[] = $finalPoseAbs;
+                }
+            }
+            if (!empty($seq)) {
+                $poseFrameSequences[$p] = $seq;
+            }
+        }
+
+        // Target GIF filename (decoupled from blocking pipeline for sub-second collage completion)
+        $gifFileName = $vars['sessionId'] . '.gif';
+        $vars['gifFileName'] = $gifFileName;
 
         // Save original pristine collage and frame metadata
         $origCollageTemp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
@@ -150,12 +225,26 @@ try {
         @copy($vars['tmpFile'], $origCollageTemp);
         @copy($vars['tmpFile'], $origCollageFinal);
 
-        $layoutConfigPath = Collage::getCollageConfigPath($config['collage']['layout'], $config['collage']['orientation'] ?? 'portrait');
-        $framePath = null;
-        if ($layoutConfigPath && file_exists($layoutConfigPath)) {
-            $layoutData = json_decode((string)file_get_contents($layoutConfigPath), true);
-            if (is_array($layoutData) && !empty($layoutData['frame'])) {
-                $framePath = $layoutData['frame'];
+        // Create an optimized 1200px preview base image for ultra-fast preset filtering on Result Screen (<30ms)
+        $previewBaseTemp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'preview_base_' . $vars['fileName'];
+        if (file_exists($vars['tmpFile'])) {
+            $baseImg = @imagecreatefromjpeg($vars['tmpFile']);
+            if ($baseImg instanceof \GdImage) {
+                $bW = imagesx($baseImg);
+                $bH = imagesy($baseImg);
+                if (max($bW, $bH) > 1200) {
+                    $scalePreview = 1200.0 / max($bW, $bH);
+                    $pW = (int) round($bW * $scalePreview);
+                    $pH = (int) round($bH * $scalePreview);
+                    $scaledBase = imagescale($baseImg, $pW, $pH);
+                    if ($scaledBase instanceof \GdImage) {
+                        imagejpeg($scaledBase, $previewBaseTemp, 90);
+                        imagedestroy($scaledBase);
+                    }
+                } else {
+                    @copy($vars['tmpFile'], $previewBaseTemp);
+                }
+                imagedestroy($baseImg);
             }
         }
 
@@ -171,17 +260,49 @@ try {
             'final_photo' => $vars['fileName'],
             'gif_photo' => $vars['gifFileName'],
             'original_photos' => $vars['savedOriginalPoses'],
+            'timelapse_photos' => $vars['savedTimelapseFrames'],
+            'timelapse_by_pose' => $vars['savedTimelapseByPose'],
             'created_at' => time()
         ];
         @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
         @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     } else {
-        // Save pristine original for single photo mode as well
+        // Restore tmpFile from orig_ if re-applying filter from Result screen
         $origSingleTemp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
         $origSingleFinal = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'orig_' . $vars['fileName'];
+        if (!file_exists($vars['tmpFile']) && file_exists($origSingleFinal)) {
+            @copy($origSingleFinal, $vars['tmpFile']);
+        }
         @copy($vars['tmpFile'], $origSingleTemp);
         @copy($vars['tmpFile'], $origSingleFinal);
         $vars['savedOriginalPoses'][] = 'orig_' . $vars['fileName'];
+
+        // Target GIF filename for single photo (decoupled for instant response)
+        $gifFileName = $vars['sessionId'] . '.gif';
+        $vars['gifFileName'] = $gifFileName;
+
+        // Create an optimized 1200px preview base image for single photo mode as well
+        $previewBaseTemp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'preview_base_' . $vars['fileName'];
+        if (file_exists($vars['tmpFile'])) {
+            $baseImg = @imagecreatefromjpeg($vars['tmpFile']);
+            if ($baseImg instanceof \GdImage) {
+                $bW = imagesx($baseImg);
+                $bH = imagesy($baseImg);
+                if (max($bW, $bH) > 1200) {
+                    $scalePreview = 1200.0 / max($bW, $bH);
+                    $pW = (int) round($bW * $scalePreview);
+                    $pH = (int) round($bH * $scalePreview);
+                    $scaledBase = imagescale($baseImg, $pW, $pH);
+                    if ($scaledBase instanceof \GdImage) {
+                        imagejpeg($scaledBase, $previewBaseTemp, 90);
+                        imagedestroy($scaledBase);
+                    }
+                } else {
+                    @copy($vars['tmpFile'], $previewBaseTemp);
+                }
+                imagedestroy($baseImg);
+            }
+        }
 
         $metaData = [
             'session_id' => $vars['sessionId'],
@@ -193,8 +314,10 @@ try {
             'preset' => $vars['preset'] ?? 'original',
             'preset_amount' => $vars['preset_amount'] ?? 100,
             'final_photo' => $vars['fileName'],
-            'gif_photo' => null,
+            'gif_photo' => $vars['gifFileName'],
             'original_photos' => $vars['savedOriginalPoses'],
+            'timelapse_photos' => $vars['savedTimelapseFrames'],
+            'timelapse_by_pose' => $vars['savedTimelapseByPose'],
             'created_at' => time()
         ];
         @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));

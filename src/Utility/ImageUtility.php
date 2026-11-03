@@ -74,7 +74,6 @@ class ImageUtility
     {
         $folders = [
             'private/images/demo',
-            'data/tmp',
             'resources/img/demo',
         ];
         $demoImages = [];
