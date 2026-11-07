@@ -51,10 +51,13 @@ $presets = $presetService->getEnabledPresets();
             <span id="preset-status" class="preset-status-pill">Ready</span>
         </div>
 
-        <!-- Action Buttons: Retake & Confirm -->
+        <!-- Action Buttons: Retake, Direct QR & Confirm -->
         <div class="preset-actions-container">
             <button type="button" id="btn-preset-retake" class="preset-action-btn btn-retake" title="Chụp lại từ đầu nếu chưa ưng ý">
                 <i class="fa fa-refresh"></i> <span>Chụp lại</span>
+            </button>
+            <button type="button" id="btn-preset-qr" class="preset-action-btn btn-qr-direct" title="Lưu màu hiện tại và hiện ngay Mã QR tải Ảnh & GIF (Cloud R2)">
+                <i class="fa fa-qrcode"></i> <span>Mã QR</span>
             </button>
             <button type="button" id="btn-preset-confirm" class="preset-action-btn btn-confirm" title="Xác nhận ảnh ưng ý và hoàn tất lồng khung">
                 <i class="fa fa-check-circle"></i> <span>Xác nhận lấy ảnh</span>
@@ -109,67 +112,19 @@ $presets = $presetService->getEnabledPresets();
     </div>
 </div>
 
-<!-- Dedicated QR Delivery Modal -->
+<!-- Pure Guest QR Delivery Modal (Shown immediately on Result / Preset Screen) -->
 <div id="qrDeliveryModal" class="confirm-modal hidden" aria-hidden="true">
     <div class="confirm-modal-backdrop" id="qr-modal-backdrop"></div>
     <div class="confirm-modal-card qr-card">
         <div class="qr-modal-header">
-            <span class="qr-badge" id="qr-mode-badge"><i class="fa fa-qrcode"></i> <span>Mã QR Nhận Ảnh</span></span>
-            <div style="display:flex; align-items:center; gap:8px;">
-                <button type="button" id="btn-toggle-qr-settings" title="Chuyển đổi Chế độ QR: Mạng Địa Điểm (Hướng 1) / Website Cloud (Hướng 2)" style="background:#eff6ff; border:1px solid #93c5fd; color:#1d4ed8; height:32px; padding:0 12px; border-radius:20px; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:5px; font-size:12px; font-weight:700;">
-                    <i class="fa fa-sliders"></i> <span>Chế độ Mạng</span>
-                </button>
-                <div class="qr-countdown-pill" id="qr-countdown-box" title="Thời gian tự động quay về màn hình chụp">
-                    <i class="fa fa-clock-o"></i> <span id="qr-countdown-val">30</span>s
-                </div>
+            <span class="qr-badge cloud" id="qr-mode-badge"><i class="fa fa-cloud"></i> <span>Cloud R2 • Nhận Ảnh & GIF</span></span>
+            <div class="qr-countdown-pill" id="qr-countdown-box" title="Thời gian tự động quay về màn hình chụp">
+                <i class="fa fa-clock-o"></i> <span id="qr-countdown-val">30</span>s
             </div>
         </div>
 
-        <!-- Inline Switcher Panel: Hướng 1 (Venue Wi-Fi) vs Hướng 2 (Cloud Web) -->
-        <div id="qr-network-settings-panel" style="display:none; background:#f8fafc; border:1px solid #cbd5e1; border-radius:14px; padding:12px 14px; margin-bottom:12px; text-align:left; font-size:12px; color:#1e293b;">
-            <div style="font-weight:800; font-size:13px; margin-bottom:8px; color:#0f172a; display:flex; justify-content:space-between; align-items:center;">
-                <span>⚙️ Cấu hình Chế độ Lấy Ảnh QR</span>
-                <span id="qr-net-save-msg" style="font-size:11px; color:#10b981; font-weight:700;"></span>
-            </div>
-            <div style="display:flex; gap:8px; margin-bottom:10px;">
-                <label style="flex:1; display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:10px; border:1px solid #cbd5e1; background:#ffffff; cursor:pointer; font-weight:700;">
-                    <input type="radio" name="qr_delivery_mode" value="venue_wifi" checked>
-                    <span>📶 Hướng 1: Mạng Địa Điểm</span>
-                </label>
-                <label style="flex:1; display:flex; align-items:center; gap:6px; padding:7px 10px; border-radius:10px; border:1px solid #cbd5e1; background:#ffffff; cursor:pointer; font-weight:700;">
-                    <input type="radio" name="qr_delivery_mode" value="cloud_web">
-                    <span>☁️ Hướng 2: Web Riêng (4G)</span>
-                </label>
-            </div>
-            <div id="qr-fields-venue" style="display:flex; flex-direction:column; gap:6px;">
-                <div>
-                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">IP Máy Photobooth tại địa điểm (LAN IP):</label>
-                    <input type="text" id="input-venue-ip" placeholder="VD: 192.168.1.105" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
-                </div>
-                <div>
-                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">Tên Wi-Fi địa điểm (Hiển thị nhắc khách):</label>
-                    <input type="text" id="input-venue-ssid" placeholder="VD: Coffee_House_5G (Tùy chọn)" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
-                </div>
-            </div>
-            <div id="qr-fields-cloud" style="display:none; flex-direction:column; gap:6px;">
-                <div>
-                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">Địa chỉ Website Cloud riêng (Hỗ trợ mọi 4G/Wi-Fi):</label>
-                    <input type="text" id="input-cloud-url" placeholder="VD: https://photo.tenmiencuaban.com" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
-                </div>
-                <div>
-                    <label style="display:block; font-weight:600; color:#475569; margin-bottom:2px;">Cloud API Key bảo mật:</label>
-                    <input type="text" id="input-cloud-key" placeholder="tys_secret_key_2026" style="width:100%; padding:6px 10px; border-radius:8px; border:1px solid #cbd5e1; font-size:12px;">
-                </div>
-            </div>
-            <div style="margin-top:10px; display:flex; justify-content:flex-end; gap:8px;">
-                <button type="button" id="btn-save-qr-network" style="background:#2563eb; color:#ffffff; border:none; border-radius:8px; padding:6px 14px; font-weight:700; font-size:12px; cursor:pointer;">
-                    <i class="fa fa-check"></i> Lưu & Cập nhật Mã QR
-                </button>
-            </div>
-        </div>
-        
         <h2 class="qr-modal-title">Quét Mã QR Để Tải Ảnh</h2>
-        <p class="qr-modal-desc" id="qr-modal-instruction">Mở camera điện thoại của bạn và hướng vào mã QR bên dưới để tải ảnh gốc chất lượng cao về máy.</p>
+        <p class="qr-modal-desc" id="qr-modal-instruction">Mở camera điện thoại (dùng 4G/5G hoặc bất kỳ WiFi nào) quét mã QR bên dưới để tải Ảnh gốc & Ảnh động GIF về máy.</p>
         
         <div class="qr-image-container">
             <div class="qr-image-frame">
@@ -182,7 +137,7 @@ $presets = $presetService->getEnabledPresets();
 
         <div class="qr-direct-link-container">
             <a href="#" target="_blank" id="qr-direct-link" class="qr-direct-link">
-                <i class="fa fa-external-link"></i> Mở link tải trực tiếp
+                <i class="fa fa-external-link"></i> Mở trang tải ảnh trực tiếp
             </a>
         </div>
 
@@ -192,6 +147,49 @@ $presets = $presetService->getEnabledPresets();
             </button>
             <button type="button" class="confirm-modal-close" id="qr-btn-close">
                 <i class="fa fa-times"></i> Đóng lại xem ảnh
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- One-Time Cloud R2 Setup Modal (Opened only from Start Screen) -->
+<div id="cloudR2SetupModal" class="confirm-modal hidden" aria-hidden="true">
+    <div class="confirm-modal-backdrop" id="r2-setup-backdrop"></div>
+    <div class="confirm-modal-card qr-card" style="max-width:460px !important; text-align:left;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <span class="qr-badge cloud"><i class="fa fa-cloud-upload"></i> <span>Cấu hình Cloudflare R2 (1 Lần)</span></span>
+            <span id="qr-net-save-msg" style="font-size:12px; color:#10b981; font-weight:700;"></span>
+        </div>
+        <h2 style="font-size:19px; font-weight:800; color:#0f172a; margin:0 0 6px;">Thiết Lập Máy Chủ Nhận Ảnh QR</h2>
+        <p style="font-size:12.5px; color:#64748b; margin:0 0 16px; line-height:1.45;">
+            Cấu hình 1 lần tại màn hình chờ. Sau khi lưu, ở màn hình chụp/áp preset khi bấm nút <b>Mã QR</b> hệ thống sẽ tự động đẩy Ảnh + GIF lên R2 và hiện thẳng mã QR cho khách quét.
+        </p>
+
+        <div style="display:flex; flex-direction:column; gap:12px; margin-bottom:18px;">
+            <div>
+                <label style="display:block; font-weight:700; font-size:12.5px; color:#334155; margin-bottom:4px;">Địa chỉ Cloudflare R2 Worker (URL):</label>
+                <input type="text" id="input-cloud-url" value="https://tysptb.kocodau2006.workers.dev" placeholder="VD: https://tysptb.kocodau2006.workers.dev" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid #cbd5e1; font-size:13px; color:#0f172a; font-weight:600;">
+            </div>
+            <div>
+                <label style="display:block; font-weight:700; font-size:12.5px; color:#334155; margin-bottom:4px;">Cloud API Key bảo mật (PHOTOBOOTH_API_KEY):</label>
+                <input type="text" id="input-cloud-key" value="tys_secret_key_2026" placeholder="tys_secret_key_2026" style="width:100%; padding:10px 12px; border-radius:10px; border:1px solid #cbd5e1; font-size:13px; color:#0f172a;">
+            </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px;">
+            <div style="display:flex; gap:8px;">
+                <button type="button" id="btn-test-cloud-r2" style="flex:1; background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; border-radius:12px; padding:11px 12px; font-weight:700; font-size:13px; cursor:pointer;">
+                    <i class="fa fa-plug"></i> Kiểm tra kết nối R2
+                </button>
+                <button type="button" id="btn-save-qr-network" style="flex:1; background:linear-gradient(135deg, #2563eb, #0ea5e9); color:#ffffff; border:none; border-radius:12px; padding:11px 14px; font-weight:700; font-size:13px; cursor:pointer;">
+                    <i class="fa fa-check"></i> Lưu cấu hình
+                </button>
+            </div>
+            <button type="button" id="btn-r2-test-qr-latest" style="width:100%; background:#f8fafc; color:#2563eb; border:1px dashed #93c5fd; border-radius:12px; padding:9px 12px; font-weight:700; font-size:12.5px; cursor:pointer;">
+                <i class="fa fa-qrcode"></i> Xem thử Mã QR của ảnh chụp gần nhất
+            </button>
+            <button type="button" class="confirm-modal-close" id="r2-setup-btn-close" style="width:100%; text-align:center; margin-top:4px;">
+                <i class="fa fa-times"></i> Đóng bảng cài đặt
             </button>
         </div>
     </div>
@@ -463,6 +461,16 @@ $presets = $presetService->getEnabledPresets();
     border-color: #ef4444;
     color: #ffffff;
     box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+    transform: translateY(-1px);
+}
+.preset-action-btn.btn-qr-direct {
+    background: linear-gradient(135deg, #6366f1, #0ea5e9);
+    color: #ffffff;
+    box-shadow: 0 4px 14px rgba(14, 165, 233, 0.4);
+}
+.preset-action-btn.btn-qr-direct:hover {
+    background: linear-gradient(135deg, #818cf8, #38bdf8);
+    box-shadow: 0 6px 18px rgba(56, 189, 248, 0.55);
     transform: translateY(-1px);
 }
 .preset-action-btn.btn-confirm {

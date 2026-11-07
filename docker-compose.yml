@@ -6,7 +6,13 @@ services:
       - "443:443"
     environment:
       - COMPOSER_VERSION=2
+      - PHP_MEMORY_LIMIT=512M
+      - PHP_MAX_EXECUTION_TIME=60
+      - PHP_OPCACHE_MEMORY_CONSUMPTION=192
+      - PHP_OPCACHE_MAX_ACCELERATED_FILES=10000
+      - PHP_OPCACHE_REVALIDATE_FREQ=2
     volumes:
+      - ./config/php-performance.ini:/opt/docker/etc/php/php.webdevops.ini
       - ./data:/app/data
       - ./var:/app/var
       - ./config:/app/config

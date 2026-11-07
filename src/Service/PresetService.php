@@ -16,6 +16,7 @@ class PresetService
     protected string $configFile;
     protected array $presets = [];
     protected ColorPresetProcessor $processor;
+    protected static array $xmpCache = [];
 
     private function __construct()
     {
@@ -60,11 +61,14 @@ class PresetService
             $this->savePresets();
         }
 
-        // Auto-discover any new presets placed in PresetColor/ folder
-        $this->discoverPresetsFromDirectory();
-
-        // Ensure LUT files exist for the enabled presets
-        $this->ensureLutsExist();
+        // Auto-discover any new presets placed in PresetColor/ folder only when folder mtime > config mtime
+        $presetDir = PathUtility::getAbsolutePath('PresetColor');
+        $configMtime = file_exists($this->configFile) ? (int) @filemtime($this->configFile) : 0;
+        $dirMtime = is_dir($presetDir) ? (int) @filemtime($presetDir) : 0;
+        if ($dirMtime >= $configMtime || empty($this->presets)) {
+            $this->discoverPresetsFromDirectory();
+            $this->ensureLutsExist();
+        }
     }
 
     /**
@@ -299,6 +303,10 @@ class PresetService
      */
     public function parseXmpFile(string $filePath): array
     {
+        if (isset(self::$xmpCache[$filePath])) {
+            return self::$xmpCache[$filePath];
+        }
+
         if (!file_exists($filePath)) {
             return ['params' => [], 'exact' => [], 'approx' => [], 'unsupported' => []];
         }
@@ -350,12 +358,14 @@ class PresetService
             }
         }
 
-        return [
+        self::$xmpCache[$filePath] = [
             'params' => $params,
             'exact' => $exact,
             'approx' => $approx,
             'unsupported' => $unsupported,
         ];
+
+        return self::$xmpCache[$filePath];
     }
 
     /**
@@ -450,14 +460,24 @@ class PresetService
         }
 
         $lutAbsolutePath = $preset->lutFile ? PathUtility::getAbsolutePath($preset->lutFile) : null;
-        $xmpAbsolutePath = PathUtility::getAbsolutePath($preset->sourceFile);
-        $xmpMeta = file_exists($xmpAbsolutePath) ? $this->parseXmpFile($xmpAbsolutePath) : ['params' => []];
+        $hasLut = ($lutAbsolutePath !== null && is_file($lutAbsolutePath));
+
+        // Avoid reading and parsing XMP XML on disk when HaldCLUT PNG already exists or cached DTO params exist
+        if ($hasLut && extension_loaded('imagick')) {
+            $params = [];
+        } elseif (!empty($preset->exactParams) || !empty($preset->approximatedParams)) {
+            $params = array_merge($preset->exactParams, $preset->approximatedParams);
+        } else {
+            $xmpAbsolutePath = PathUtility::getAbsolutePath($preset->sourceFile);
+            $xmpMeta = file_exists($xmpAbsolutePath) ? $this->parseXmpFile($xmpAbsolutePath) : ['params' => []];
+            $params = $xmpMeta['params'];
+        }
 
         return $this->processor->applyPreset(
             $sourceImagePath,
             $targetImagePath,
             $lutAbsolutePath,
-            $xmpMeta['params'],
+            $params,
             $amount
         );
     }

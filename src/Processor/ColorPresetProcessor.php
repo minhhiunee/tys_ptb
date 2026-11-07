@@ -10,6 +10,8 @@ use Psr\Log\LoggerInterface;
 class ColorPresetProcessor
 {
     protected LoggerInterface $logger;
+    /** @var array<string, \Imagick> Static in-memory cache of loaded HaldCLUT PNGs per request */
+    protected static array $lutImagickCache = [];
 
     public function __construct()
     {
@@ -77,10 +79,10 @@ class ColorPresetProcessor
             $processed = clone $original;
 
             if (!empty($lutPath) && file_exists($lutPath)) {
-                $lut = new \Imagick($lutPath);
-                $processed->haldClutImage($lut);
-                $lut->clear();
-                $lut->destroy();
+                if (!isset(self::$lutImagickCache[$lutPath])) {
+                    self::$lutImagickCache[$lutPath] = new \Imagick($lutPath);
+                }
+                $processed->haldClutImage(self::$lutImagickCache[$lutPath]);
             } else {
                 // Apply approximate XMP parameters if no LUT image exists
                 $this->applyXmpParamsToImagick($processed, $xmpParams);

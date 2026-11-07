@@ -1369,19 +1369,10 @@ const photoBooth = (function () {
             return;
         }
 
-        photoboothTools.modal.open();
-        const body = photoboothTools.modal.element.querySelector('.modal-body');
-
-        const image = document.createElement('img');
-        image.src = environment.publicFolders.api + '/qrcode.php?filename=' + filename;
-        body.appendChild(image);
-
-        const qrHelpText = config.qr.custom_text
-            ? config.qr.text
-            : photoboothTools.getTranslation('qrHelp') + '<br><b>' + config.webserver.ssid + '</b>';
-        const text = document.createElement('p');
-        text.innerHTML = qrHelpText;
-        body.appendChild(text);
+        if (typeof window.openCloudQrModal === 'function') {
+            window.openCloudQrModal(filename);
+            return;
+        }
     };
 
     api.renderPic = function (filename, files) {

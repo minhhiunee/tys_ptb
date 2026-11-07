@@ -324,6 +324,26 @@ try {
         @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
     }
 
+    // Pre-generate and save the companion QR code image (qr_<sessionId>.png) alongside the photo for instant History/Gallery access
+    if (isset($metaData) && is_array($metaData) && !empty($vars['sessionId'])) {
+        $netCfg = \Photobooth\Service\SyncQueueService::getInstance()->getNetworkModeConfig();
+        $cloudBase = rtrim(trim((string) ($netCfg['cloud_url'] ?? 'https://tysptb.kocodau2006.workers.dev')), '/');
+        $cloudBase = preg_replace('/\?.*$/', '', $cloudBase) ?? $cloudBase;
+        $qrTargetUrl = ($cloudBase !== '' ? $cloudBase : 'https://tysptb.kocodau2006.workers.dev') . '/?s=' . rawurlencode((string) $vars['sessionId']);
+        $qrSavedFile = 'qr_' . $vars['sessionId'] . '.png';
+        $qrSavedPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $qrSavedFile;
+        try {
+            $qrObj = \Photobooth\Utility\QrCodeUtility::create($qrTargetUrl);
+            @file_put_contents($qrSavedPath, $qrObj->getString());
+            $metaData['qr_url'] = $qrTargetUrl;
+            $metaData['qr_file'] = $qrSavedFile;
+            @file_put_contents(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            @file_put_contents(FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . 'meta_' . $vars['fileName'] . '.json', json_encode($metaData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+        } catch (\Throwable) {
+            // QR can still be generated on demand by api/qrcode.php
+        }
+    }
+
     foreach ($vars['srcImages'] as $vars['singleImageFile']) {
         $imageHandler->imageModified = false;
         $vars['resultFile'] = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];

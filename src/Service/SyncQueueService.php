@@ -43,17 +43,25 @@ class SyncQueueService
      * Enqueue or update a capture session for cloud synchronization.
      * Prevents duplicate records for the same session_id.
      */
-    public function enqueueSession(string $sessionId, array $sessionData): array
+    public function enqueueSession(string $sessionId, array $sessionData, bool $immediateSync = false): array
     {
         $queue = $this->loadQueue();
         $now = time();
 
         $existing = $queue[$sessionId] ?? null;
+        $gifPhoto = $sessionData['gif_photo'] ?? ($existing['gif_photo'] ?? null);
+        if (empty($gifPhoto)) {
+            $candidateGif = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $sessionId . '.gif';
+            if (is_file($candidateGif)) {
+                $gifPhoto = $sessionId . '.gif';
+            }
+        }
+
         $record = [
             'session_id' => $sessionId,
             'environment' => $this->getEnvironmentProfile(),
-            'final_photo' => $sessionData['final_photo'] ?? ($existing['final_photo'] ?? null),
-            'gif_photo' => $sessionData['gif_photo'] ?? ($existing['gif_photo'] ?? null),
+            'final_photo' => $sessionData['final_photo'] ?? ($existing['final_photo'] ?? ($sessionId . '.jpg')),
+            'gif_photo' => $gifPhoto,
             'original_photos' => $sessionData['original_photos'] ?? ($existing['original_photos'] ?? []),
             'metadata' => array_merge($existing['metadata'] ?? [], $sessionData['metadata'] ?? []),
             'status' => 'pending', // Reset to pending when created or updated (e.g. preset changed)
@@ -69,10 +77,8 @@ class SyncQueueService
 
         $this->logger->debug("Session queued for sync: {$sessionId}");
 
-        // If auto-sync is enabled or Cloud Web mode (Hướng 2) is active, attempt immediate sync
-        $netCfg = $this->getNetworkModeConfig();
-        $isCloudMode = ($netCfg['mode'] ?? '') === 'cloud_web' && !empty($this->getRemoteEndpoint());
-        if ((!empty($this->config['sync']['auto_sync']) || $isCloudMode) && !empty($this->getRemoteEndpoint())) {
+        // Only run synchronous blocking upload if explicitly requested ($immediateSync = true)
+        if ($immediateSync && !empty($this->getRemoteEndpoint())) {
             $this->syncSession($sessionId);
             $queue = $this->loadQueue();
             return $queue[$sessionId] ?? $record;
@@ -105,7 +111,10 @@ class SyncQueueService
         $netCfg = $this->getNetworkModeConfig();
         $cloudUrl = rtrim(trim((string) ($netCfg['cloud_url'] ?? '')), '/');
         if ($cloudUrl !== '') {
-            if (str_ends_with($cloudUrl, '.php')) {
+            // Strip query params if user pasted a viewer URL like https://.../?s=123
+            $cloudUrl = preg_replace('/\?.*$/', '', $cloudUrl) ?? $cloudUrl;
+            $cloudUrl = rtrim($cloudUrl, '/');
+            if (str_ends_with($cloudUrl, '.php') || str_ends_with($cloudUrl, '/api/upload')) {
                 return $cloudUrl;
             }
             return $cloudUrl . '/api/syncReceive.php';
@@ -170,6 +179,25 @@ class SyncQueueService
         $autoCompress = (bool) ($netCfg['auto_compress_cloud'] ?? true);
         $tempCompressedFile = null;
 
+        $imagesDir = FolderEnum::IMAGES->absolute();
+        $finalFileName = basename((string) ($item['final_photo'] ?? ($sessionId . '.jpg')));
+
+        // Refresh latest metadata from meta_<file>.json on disk if available
+        $diskMetaFile = $imagesDir . DIRECTORY_SEPARATOR . 'meta_' . $finalFileName . '.json';
+        if (is_file($diskMetaFile)) {
+            $diskMeta = json_decode((string) @file_get_contents($diskMetaFile), true);
+            if (is_array($diskMeta)) {
+                $item['metadata'] = array_merge($item['metadata'] ?? [], $diskMeta);
+            }
+        }
+
+        // Auto-detect companion GIF on disk even if it was baked after initial enqueue
+        $gifFileName = !empty($item['gif_photo']) ? basename((string) $item['gif_photo']) : ($sessionId . '.gif');
+        $gifPath = $imagesDir . DIRECTORY_SEPARATOR . $gifFileName;
+        if (is_file($gifPath)) {
+            $item['gif_photo'] = $gifFileName;
+        }
+
         $postFields = [
             'session_id' => $sessionId,
             'environment' => $this->getEnvironmentProfile(),
@@ -177,27 +205,21 @@ class SyncQueueService
         ];
 
         // Attach final photo (optionally compressed to fast Full HD for instant 4G/Cloud upload)
-        $imagesDir = FolderEnum::IMAGES->absolute();
-        if (!empty($item['final_photo'])) {
-            $finalPath = $imagesDir . DIRECTORY_SEPARATOR . basename((string) $item['final_photo']);
-            if (is_file($finalPath)) {
-                $uploadPath = $finalPath;
-                if ($autoCompress && filesize($finalPath) > 900 * 1024) {
-                    $tempCompressedFile = $this->createCompressedCloudCopy($finalPath);
-                    if ($tempCompressedFile !== null) {
-                        $uploadPath = $tempCompressedFile;
-                    }
+        $finalPath = $imagesDir . DIRECTORY_SEPARATOR . $finalFileName;
+        if (is_file($finalPath)) {
+            $uploadPath = $finalPath;
+            if ($autoCompress && filesize($finalPath) > 900 * 1024) {
+                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath);
+                if ($tempCompressedFile !== null) {
+                    $uploadPath = $tempCompressedFile;
                 }
-                $postFields['final_photo'] = new \CURLFile($uploadPath, 'image/jpeg', basename($finalPath));
             }
+            $postFields['final_photo'] = new \CURLFile($uploadPath, 'image/jpeg', $finalFileName);
         }
 
         // Attach animated GIF if available
-        if (!empty($item['gif_photo'])) {
-            $gifPath = $imagesDir . DIRECTORY_SEPARATOR . basename((string) $item['gif_photo']);
-            if (is_file($gifPath)) {
-                $postFields['gif_photo'] = new \CURLFile($gifPath, 'image/gif', basename($gifPath));
-            }
+        if (is_file($gifPath)) {
+            $postFields['gif_photo'] = new \CURLFile($gifPath, 'image/gif', $gifFileName);
         }
 
         $ch = curl_init($endpoint);

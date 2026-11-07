@@ -23,6 +23,7 @@ RUN echo "LimitRequestLine 12000" > /opt/docker/etc/httpd/conf.d/limits.conf \
 # Copy files
 WORKDIR /app
 COPY . .
+COPY config/php-performance.ini /opt/docker/etc/php/php.webdevops.ini
 
 RUN chown -R application:application /app
 

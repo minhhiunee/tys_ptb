@@ -1,0 +1,15 @@
+{
+  "name": "photobooth-r2-cloud",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cloudflare Worker + R2 Storage + Mobile Web Viewer for Photobooth QR Delivery",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "r2:create": "wrangler r2 bucket create photobooth-media"
+  },
+  "devDependencies": {
+    "wrangler": "^3.86.0"
+  }
+}
+

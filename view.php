@@ -7,7 +7,7 @@ use Photobooth\Utility\PathUtility;
 
 require_once __DIR__ . '/lib/boot.php';
 
-$imageParam = $_GET['image'] ?? $_GET['session'] ?? '';
+$imageParam = $_GET['s'] ?? $_GET['image'] ?? $_GET['session'] ?? '';
 $image = basename((string) $imageParam);
 if ($image !== '' && !str_contains($image, '.')) {
     $image .= '.jpg';

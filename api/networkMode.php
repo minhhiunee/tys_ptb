@@ -17,10 +17,10 @@ $modeFile = PathUtility::getAbsolutePath('config/network_mode.json');
 function loadNetworkModeConfig(string $modeFile, array $appConfig): array
 {
     $defaults = [
-        'mode' => 'venue_wifi', // 'venue_wifi' (Hướng 1) or 'cloud_web' (Hướng 2)
+        'mode' => 'cloud_web', // Mặc định cố định đẩy lên Cloudflare R2
         'venue_ip' => (string) ($appConfig['qr']['local_ip'] ?? ''),
         'venue_ssid' => '',
-        'cloud_url' => (string) ($appConfig['qr']['custom_url'] ?? ''),
+        'cloud_url' => (string) ($appConfig['qr']['custom_url'] ?? 'https://tysptb.kocodau2006.workers.dev'),
         'cloud_api_key' => (string) ($appConfig['sync']['api_key'] ?? 'tys_secret_key_2026'),
         'auto_compress_cloud' => true,
         'updated_at' => time(),
@@ -58,8 +58,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $action = $_POST['action'] ?? 'save';
 
+    if ($action === 'test_cloud') {
+        $testUrl = rtrim(trim((string) ($_POST['cloud_url'] ?? $currentConfig['cloud_url'])), '/');
+        $testUrl = preg_replace('/\?.*$/', '', $testUrl) ?? $testUrl;
+        $testUrl = rtrim($testUrl, '/');
+        if ($testUrl === '') {
+            echo json_encode(['success' => false, 'error' => 'Vui lòng nhập URL Cloudflare Worker / Web riêng.']);
+            exit();
+        }
+        $healthUrl = $testUrl . '/api/health';
+        $ch = curl_init($healthUrl);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_FOLLOWLOCATION => true,
+        ]);
+        $resp = curl_exec($ch);
+        $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $err = curl_error($ch);
+        curl_close($ch);
+
+        if ($resp !== false && $code >= 200 && $code < 400) {
+            $decoded = json_decode((string) $resp, true);
+            $r2Bound = is_array($decoded) ? !empty($decoded['r2_bound']) : null;
+            echo json_encode([
+                'success' => true,
+                'http_code' => $code,
+                'r2_bound' => $r2Bound,
+                'message' => $r2Bound === true
+                    ? 'Kết nối Cloudflare Worker & R2 Bucket thành công ✓'
+                    : ($r2Bound === false ? 'Đã kết nối Worker nhưng chưa gắn R2_BUCKET!' : 'Kết nối máy chủ Cloud thành công ✓'),
+            ]);
+            exit();
+        }
+
+        echo json_encode([
+            'success' => false,
+            'error' => $err !== '' ? $err : "Máy chủ trả về HTTP {$code}",
+        ]);
+        exit();
+    }
+
     if ($action === 'save') {
-        $newMode = ($_POST['mode'] ?? 'venue_wifi') === 'cloud_web' ? 'cloud_web' : 'venue_wifi';
+        $newMode = ($_POST['mode'] ?? 'cloud_web') === 'venue_wifi' ? 'venue_wifi' : 'cloud_web';
         $venueIp = trim((string) ($_POST['venue_ip'] ?? $currentConfig['venue_ip']));
         // Strip http:// or trailing slashes if user pasted full URL into IP field
         $venueIp = preg_replace('#^https?://#i', '', $venueIp) ?? $venueIp;

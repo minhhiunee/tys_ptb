@@ -1,0 +1,18 @@
+name = "photobooth-r2-cloud"
+main = "src/worker.js"
+compatibility_date = "2024-11-01"
+workers_dev = true
+
+# Kết nối Cloudflare R2 Bucket (10GB Free, $0 Egress)
+[[r2_buckets]]
+binding = "R2_BUCKET"
+bucket_name = "photobooth-media"
+
+[vars]
+# Phải trùng với Cloud API Key cấu hình trong Photobooth (mặc định: tys_secret_key_2026)
+PHOTOBOOTH_API_KEY = "tys_secret_key_2026"
+BRAND_TITLE = "TYS Photobooth"
+BRAND_SUBTITLE = "Lưu giữ khoảnh khắc của bạn"
+# Số ngày lưu ảnh tự động (hiển thị thông báo cho khách)
+EXPIRE_DAYS = "7"
+

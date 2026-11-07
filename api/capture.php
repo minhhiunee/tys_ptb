@@ -162,6 +162,7 @@ try {
     }
 
     // send image to frontend
+    \Photobooth\Service\StorageMaintenanceService::getInstance()->runProbabilisticCleanup(20);
     echo json_encode($captureHandler->returnData());
     exit();
 } catch (\Exception $e) {

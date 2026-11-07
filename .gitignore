@@ -57,3 +57,11 @@ scripts/rembg_venv/
 /.venv
 /site
 /.envrc
+
+# Cloudflare Worker secrets & dependencies
+cloud-r2-viewer/.wrangler/
+cloud-r2-viewer/node_modules/
+cloud-r2-viewer/dist/
+
+# Whitelist file cau hinh PHP Docker (khong phai secret)
+!config/php-performance.ini

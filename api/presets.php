@@ -92,6 +92,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $previewFileName = 'preview_' . $presetId . '_' . $amount . '_' . $file;
             $targetFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $previewFileName;
 
+            // Fast-path cache hit: if this exact preview (file + preset + amount) already exists, return immediately (<2ms)
+            if (is_file($targetFile) && filesize($targetFile) > 1000) {
+                echo json_encode([
+                    'success' => true,
+                    'file' => $previewFileName,
+                    'url' => PathUtility::getPublicPath('data/tmp/' . $previewFileName) . '?v=' . filemtime($targetFile),
+                    'preset' => $presetId,
+                    'amount' => $amount,
+                    'cached' => true,
+                ]);
+                exit();
+            }
+
             // Use optimized 1200px preview base image if available for sub-30ms responsiveness
             $previewBaseFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'preview_base_' . $file;
             $previewSource = file_exists($previewBaseFile) ? $previewBaseFile : $baseSourceFile;
@@ -102,9 +115,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new \Exception('Failed generating preset preview');
             }
 
-            // Re-apply pristine frame overlay to ensure frame colors, logos, and borders are unaffected
+            // Re-apply pristine frame overlay to ensure frame colors, logos, and borders are unaffected (quality 88 for fast preview)
             if ($framePngPath && file_exists($framePngPath)) {
-                reapplyFrameOverlay($targetFile, $framePngPath);
+                reapplyFrameOverlay($targetFile, $framePngPath, 88);
             }
 
             echo json_encode([
@@ -115,25 +128,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'amount' => $amount,
             ]);
             exit();
-        }
-
-        // Final application to result image in data/images
-        $targetFile = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $file;
-        $thumbFile = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $file;
-
-        $success = $presetService->applyPreset($baseSourceFile, $targetFile, $presetId, $amount);
-        if (!$success) {
-            throw new \Exception('Failed applying preset to image');
-        }
-
-        // Re-apply pristine frame overlay on baked image
-        if ($framePngPath && file_exists($framePngPath)) {
-            reapplyFrameOverlay($targetFile, $framePngPath);
-        }
-
-        // Regenerate thumbnail if needed
-        if (file_exists($targetFile)) {
-            copy($targetFile, $thumbFile);
         }
 
         // Persist applied preset & amount into session metadata JSON (Stage 2 & 3 requirement)
@@ -147,6 +141,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $decodedMeta = json_decode((string) file_get_contents($metaImagesPath), true);
             if (is_array($decodedMeta)) {
                 $currentMeta = $decodedMeta;
+            }
+        }
+
+        // Final application to result image in data/images
+        // Skip redundant full-res static image re-bake if action is strictly 'bake_gif' and static preset hasn't changed
+        $targetFile = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $file;
+        $thumbFile = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $file;
+        $staticAlreadyBaked = ($action === 'bake_gif')
+            && is_file($targetFile)
+            && (($currentMeta['preset'] ?? 'original') === $presetId)
+            && ((int) ($currentMeta['preset_amount'] ?? 100) === $amount);
+
+        if (!$staticAlreadyBaked) {
+            $success = $presetService->applyPreset($baseSourceFile, $targetFile, $presetId, $amount);
+            if (!$success) {
+                throw new \Exception('Failed applying preset to image');
+            }
+
+            // Re-apply pristine frame overlay on baked image
+            if ($framePngPath && file_exists($framePngPath)) {
+                reapplyFrameOverlay($targetFile, $framePngPath);
+            }
+
+            // Regenerate thumbnail if needed
+            if (file_exists($targetFile)) {
+                copy($targetFile, $thumbFile);
             }
         }
 
@@ -164,70 +184,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Decouple heavy GIF re-baking: only re-bake when explicitly requested (e.g. user opens GIF viewer)
         if ($shouldBakeGif) {
-            $gifProcessor = new \Photobooth\Processor\GifProcessor();
+            // Fast-path cache hit: if GIF is already baked for this exact preset and amount, return immediately (<2ms)
+            $gifCacheHit = is_file($gifTargetPath)
+                && filesize($gifTargetPath) > 1000
+                && (($currentMeta['gif_baked_preset'] ?? '') === $presetId)
+                && ((int) ($currentMeta['gif_baked_amount'] ?? 100) === $amount)
+                && empty($currentMeta['gif_dirty']);
 
-            if (!empty($currentMeta['isCollage']) && !empty($currentMeta['layout'])) {
-                $layoutConfigPath = \Photobooth\Collage::getCollageConfigPath(
-                    (string) $currentMeta['layout'],
-                    (string) ($currentMeta['orientation'] ?? 'portrait')
-                );
-                if ($layoutConfigPath && is_file($layoutConfigPath)) {
-                    $layoutData = json_decode((string) file_get_contents($layoutConfigPath), true);
-                    if (is_array($layoutData) && !empty($layoutData['layout'])) {
-                        $origPoses = is_array($currentMeta['original_photos'] ?? null) ? $currentMeta['original_photos'] : [];
-                        $tlByPose = is_array($currentMeta['timelapse_by_pose'] ?? null) ? $currentMeta['timelapse_by_pose'] : [];
-                        $poseCount = max(1, count($origPoses), count($tlByPose));
-                        $poseFrameSequences = [];
-                        for ($p = 0; $p < $poseCount; $p++) {
-                            $seq = [];
-                            if (!empty($tlByPose[$p]) && is_array($tlByPose[$p])) {
-                                foreach ($tlByPose[$p] as $tlName) {
-                                    $absTl = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $tlName);
-                                    if (is_file($absTl)) {
-                                        $seq[] = $absTl;
+            if ($gifCacheHit) {
+                $gifBaked = true;
+            } else {
+                $gifProcessor = new \Photobooth\Processor\GifProcessor();
+
+                if (!empty($currentMeta['isCollage']) && !empty($currentMeta['layout'])) {
+                    $layoutConfigPath = \Photobooth\Collage::getCollageConfigPath(
+                        (string) $currentMeta['layout'],
+                        (string) ($currentMeta['orientation'] ?? 'portrait')
+                    );
+                    if ($layoutConfigPath && is_file($layoutConfigPath)) {
+                        $layoutData = json_decode((string) file_get_contents($layoutConfigPath), true);
+                        if (is_array($layoutData) && !empty($layoutData['layout'])) {
+                            $origPoses = is_array($currentMeta['original_photos'] ?? null) ? $currentMeta['original_photos'] : [];
+                            $tlByPose = is_array($currentMeta['timelapse_by_pose'] ?? null) ? $currentMeta['timelapse_by_pose'] : [];
+                            $poseCount = max(1, count($origPoses), count($tlByPose));
+                            $poseFrameSequences = [];
+                            for ($p = 0; $p < $poseCount; $p++) {
+                                $seq = [];
+                                if (!empty($tlByPose[$p]) && is_array($tlByPose[$p])) {
+                                    foreach ($tlByPose[$p] as $tlName) {
+                                        $absTl = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $tlName);
+                                        if (is_file($absTl)) {
+                                            $seq[] = $absTl;
+                                        }
                                     }
                                 }
-                            }
-                            if (isset($origPoses[$p])) {
-                                $absPose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $origPoses[$p]);
-                                if (is_file($absPose)) {
-                                    $seq[] = $absPose;
+                                if (isset($origPoses[$p])) {
+                                    $absPose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $origPoses[$p]);
+                                    if (is_file($absPose)) {
+                                        $seq[] = $absPose;
+                                    }
+                                }
+                                if (!empty($seq)) {
+                                    $poseFrameSequences[$p] = $seq;
                                 }
                             }
-                            if (!empty($seq)) {
-                                $poseFrameSequences[$p] = $seq;
+                            if (!empty($poseFrameSequences)) {
+                                $gifBaked = $gifProcessor->createFramedTimelapseGif(
+                                    $poseFrameSequences,
+                                    $layoutData,
+                                    $gifTargetPath,
+                                    140,
+                                    480,
+                                    $presetId,
+                                    $amount,
+                                    $baseSourceFile
+                                );
                             }
-                        }
-                        if (!empty($poseFrameSequences)) {
-                            $gifBaked = $gifProcessor->createFramedTimelapseGif(
-                                $poseFrameSequences,
-                                $layoutData,
-                                $gifTargetPath,
-                                140,
-                                480,
-                                $presetId,
-                                $amount,
-                                $baseSourceFile
-                            );
                         }
                     }
                 }
-            }
 
-            if (!$gifBaked) {
-                $gifSourceNames = !empty($currentMeta['timelapse_photos']) && is_array($currentMeta['timelapse_photos'])
-                    ? $currentMeta['timelapse_photos']
-                    : ($currentMeta['original_photos'] ?? []);
-                if (is_array($gifSourceNames) && !empty($gifSourceNames)) {
-                    $poseAbsPaths = [];
-                    foreach ($gifSourceNames as $poseName) {
-                        $candidatePose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $poseName);
-                        if (file_exists($candidatePose)) {
-                            $poseAbsPaths[] = $candidatePose;
+                if (!$gifBaked) {
+                    $gifSourceNames = !empty($currentMeta['timelapse_photos']) && is_array($currentMeta['timelapse_photos'])
+                        ? $currentMeta['timelapse_photos']
+                        : ($currentMeta['original_photos'] ?? []);
+                    if (is_array($gifSourceNames) && !empty($gifSourceNames)) {
+                        $poseAbsPaths = [];
+                        foreach ($gifSourceNames as $poseName) {
+                            $candidatePose = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . basename((string) $poseName);
+                            if (file_exists($candidatePose)) {
+                                $poseAbsPaths[] = $candidatePose;
+                            }
                         }
-                    }
-                    if (!empty($poseAbsPaths)) {
-                        $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 140, 480, $presetId, $amount);
+                        if (!empty($poseAbsPaths)) {
+                            $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 140, 480, $presetId, $amount);
+                        }
                     }
                 }
             }
@@ -235,14 +266,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($gifBaked) {
                 $currentMeta['gif_photo'] = $gifFileName;
                 $currentMeta['gif_baked_preset'] = $presetId;
+                $currentMeta['gif_baked_amount'] = $amount;
                 $currentMeta['gif_dirty'] = false;
-                $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . time();
+                $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . filemtime($gifTargetPath);
             }
         } else {
             // Mark whether GIF needs re-baking when user switches to GIF viewer
-            $currentMeta['gif_dirty'] = ($presetId !== ($currentMeta['gif_baked_preset'] ?? 'original'));
+            $currentMeta['gif_dirty'] = (
+                $presetId !== ($currentMeta['gif_baked_preset'] ?? 'original') ||
+                $amount !== (int) ($currentMeta['gif_baked_amount'] ?? 100)
+            );
             if (file_exists($gifTargetPath)) {
-                $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . time();
+                $gifUrl = PathUtility::getPublicPath('data/images/' . $gifFileName) . '?v=' . filemtime($gifTargetPath);
             }
         }
 
@@ -284,7 +319,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// GET request: Return list of presets
+// GET request: Return list of presets (and run probabilistic temp file maintenance)
+if (!empty($_GET['cleanup'])) {
+    \Photobooth\Service\StorageMaintenanceService::getInstance()->pruneExpiredTempFiles();
+} else {
+    \Photobooth\Service\StorageMaintenanceService::getInstance()->runProbabilisticCleanup(15);
+}
 $showAll = !empty($_GET['all']);
 $presets = $showAll ? $presetService->getAllPresets() : $presetService->getEnabledPresets();
 
@@ -292,29 +332,54 @@ echo json_encode(array_map(fn($p) => $p->toArray(), $presets));
 exit();
 
 /**
- * Overlay transparent frame PNG over processed photo to keep frame colors and branding 100% pristine
+ * Overlay transparent frame PNG over processed photo to keep frame colors and branding 100% pristine.
+ * Caches pre-scaled frame PNGs in data/tmp to eliminate costly PNG decoding + resampling on every preview.
  */
-function reapplyFrameOverlay(string $targetImagePath, string $framePngPath): void
+function reapplyFrameOverlay(string $targetImagePath, string $framePngPath, int $jpegQuality = 95): void
 {
     $image = @imagecreatefromjpeg($targetImagePath);
-    $frame = @imagecreatefrompng($framePngPath);
-    if ($image && $frame) {
+    if (!$image instanceof \GdImage) {
+        return;
+    }
+
+    $targetW = imagesx($image);
+    $targetH = imagesy($image);
+    $frameHash = md5($framePngPath . '_' . (string) @filemtime($framePngPath));
+    $cachedScaledFramePath = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('cache_frame_%s_%dx%d.png', $frameHash, $targetW, $targetH);
+
+    $scaledFrame = null;
+    if (is_file($cachedScaledFramePath)) {
+        $scaledFrame = @imagecreatefrompng($cachedScaledFramePath);
+    }
+
+    if (!$scaledFrame instanceof \GdImage) {
+        $rawFrame = @imagecreatefrompng($framePngPath);
+        if ($rawFrame instanceof \GdImage) {
+            $rawW = imagesx($rawFrame);
+            $rawH = imagesy($rawFrame);
+            if ($rawW === $targetW && $rawH === $targetH) {
+                $scaledFrame = $rawFrame;
+            } else {
+                $scaledFrame = imagecreatetruecolor($targetW, $targetH);
+                if ($scaledFrame instanceof \GdImage) {
+                    imagealphablending($scaledFrame, false);
+                    imagesavealpha($scaledFrame, true);
+                    $transparent = imagecolorallocatealpha($scaledFrame, 0, 0, 0, 127);
+                    imagefilledrectangle($scaledFrame, 0, 0, $targetW, $targetH, $transparent);
+                    imagecopyresampled($scaledFrame, $rawFrame, 0, 0, 0, 0, $targetW, $targetH, $rawW, $rawH);
+                    @imagepng($scaledFrame, $cachedScaledFramePath, 3);
+                }
+                imagedestroy($rawFrame);
+            }
+        }
+    }
+
+    if ($scaledFrame instanceof \GdImage) {
         imagealphablending($image, true);
         imagesavealpha($image, false);
-        imagecopyresampled(
-            $image,
-            $frame,
-            0,
-            0,
-            0,
-            0,
-            imagesx($image),
-            imagesy($image),
-            imagesx($frame),
-            imagesy($frame)
-        );
-        imagejpeg($image, $targetImagePath, 100);
-        imagedestroy($image);
-        imagedestroy($frame);
+        imagecopy($image, $scaledFrame, 0, 0, 0, 0, $targetW, $targetH);
+        imagejpeg($image, $targetImagePath, $jpegQuality);
+        imagedestroy($scaledFrame);
     }
+    imagedestroy($image);
 }

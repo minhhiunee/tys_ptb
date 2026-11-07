@@ -13,10 +13,21 @@ use Photobooth\Enum\FolderEnum;
 use Photobooth\Processor\GifProcessor;
 use Photobooth\Service\CameraManagerService;
 use Photobooth\Service\PresetService;
+use Photobooth\Service\StorageMaintenanceService;
 use Photobooth\Service\SyncQueueService;
 
 $results = [];
 $startTotal = microtime(true);
+
+// 0. Verify Storage Auto-Pruning & Temp Maintenance
+$tMaint = microtime(true);
+$maintenance = StorageMaintenanceService::getInstance()->pruneExpiredTempFiles();
+$results['stage0_storage_maintenance'] = [
+    'passed' => is_array($maintenance) && isset($maintenance['deleted_count']),
+    'deleted_expired_files' => $maintenance['deleted_count'] ?? 0,
+    'freed_kb' => round(($maintenance['freed_bytes'] ?? 0) / 1024, 2),
+    'prune_ms' => (int) round((microtime(true) - $tMaint) * 1000),
+];
 
 // 1. Verify Camera Multi-Device Architecture (Stage 4)
 $t0 = microtime(true);
@@ -34,16 +45,23 @@ $results['stage4_camera'] = [
     'capture_ms' => (int) round((microtime(true) - $t0) * 1000),
 ];
 
-// 2. Verify Preset Engine (Stage 2)
+// 2. Verify Preset Engine & In-Memory LUT Cache (Stage 2)
 $t1 = microtime(true);
 $presetService = PresetService::getInstance();
 $presets = $presetService->getEnabledPresets();
 $presetOut = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'diag_preset_out.jpg';
 $presetApplied = $presetService->applyPreset($testPose1, $presetOut, 'clean-portrait', 85);
+$coldRenderMs = (int) round((microtime(true) - $t1) * 1000);
+
+$t1Warm = microtime(true);
+$presetAppliedWarm = $presetService->applyPreset($testPose2, $presetOut, 'clean-portrait', 85);
+$warmRenderMs = (int) round((microtime(true) - $t1Warm) * 1000);
+
 $results['stage2_preset'] = [
-    'passed' => $presetApplied && file_exists($presetOut),
+    'passed' => $presetApplied && $presetAppliedWarm && file_exists($presetOut),
     'enabled_presets_count' => count($presets),
-    'preset_render_ms' => (int) round((microtime(true) - $t1) * 1000),
+    'cold_render_ms' => $coldRenderMs,
+    'warm_cached_render_ms' => $warmRenderMs,
 ];
 
 // 3. Verify Animated GIF Generation (Stage 3)
@@ -80,6 +98,13 @@ foreach ([$testPose1, $testPose2, $presetOut, $gifOut] as $f) {
     }
 }
 
+$opcacheStatus = function_exists('opcache_get_status') ? @opcache_get_status(false) : false;
+$results['php_runtime'] = [
+    'php_version' => PHP_VERSION,
+    'imagick_loaded' => extension_loaded('imagick'),
+    'opcache_enabled' => is_array($opcacheStatus) && !empty($opcacheStatus['opcache_enabled']),
+    'memory_limit' => ini_get('memory_limit'),
+];
 $results['total_benchmark_ms'] = (int) round((microtime(true) - $startTotal) * 1000);
 echo json_encode($results, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . PHP_EOL;
 

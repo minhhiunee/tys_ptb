@@ -221,6 +221,35 @@
         }, 80);
     });
 
+    function triggerBackgroundCloudSync(filenameOrSessionId, callback) {
+        if (!filenameOrSessionId) {
+            if (typeof callback === 'function') callback(null);
+            return;
+        }
+        const sessionId = String(filenameOrSessionId).replace(/\.[^.]+$/, '');
+        const postData = {
+            action: 'sync_session',
+            session_id: sessionId
+        };
+        if (typeof csrf !== 'undefined' && csrf.key) {
+            postData[csrf.key] = csrf.token;
+        }
+        const syncEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/syncStatus.php'
+            : 'api/syncStatus.php';
+
+        $.ajax({
+            method: 'POST',
+            url: syncEndpoint,
+            data: postData,
+            dataType: 'json'
+        }).done(function (res) {
+            if (typeof callback === 'function') callback(res);
+        }).fail(function () {
+            if (typeof callback === 'function') callback(null);
+        });
+    }
+
     function prewarmGifInBackground(filename) {
         if (!filename) return;
         const postData = {
@@ -243,6 +272,8 @@
             dataType: 'json'
         }).done(function (res) {
             console.log('GIF background pre-warm ready:', res);
+            // Automatically push Photo + GIF to Cloud R2 in background right after GIF prewarm finishes
+            triggerBackgroundCloudSync(filename);
         });
     }
 
@@ -416,6 +447,9 @@
     function forceBakeNow(presetId, amount, callback) {
         clearTimeout(bakeTimer);
         if (!currentFilename || !presetId || presetId === 'original') {
+            if (currentFilename) {
+                triggerBackgroundCloudSync(currentFilename);
+            }
             if (typeof callback === 'function') callback();
             return;
         }
@@ -425,6 +459,7 @@
             file: currentFilename,
             preset: presetId,
             amount: amount,
+            bake_gif: 1,
             preview: 0
         };
         if (typeof csrf !== 'undefined' && csrf.key) {
@@ -440,9 +475,22 @@
             dataType: 'json'
         }).always(function () {
             setStatus('Ready', false);
+            triggerBackgroundCloudSync(currentFilename);
             if (typeof callback === 'function') callback();
         });
     }
+
+    // Direct QR button on Preset Bar -> bake current preset and immediately show QR code!
+    $(document).on('click', '#btn-preset-qr', function (e) {
+        e.preventDefault();
+        keepAlive();
+        const $btn = $(this);
+        $btn.css('opacity', '0.7').prop('disabled', true);
+        forceBakeNow(currentPreset, currentAmount, function () {
+            $btn.css('opacity', '1').prop('disabled', false);
+            openQrDeliveryModal();
+        });
+    });
 
     // Confirm button on Result Screen
     $(document).on('click', '#btn-preset-confirm', function (e) {
@@ -458,16 +506,19 @@
 
     let qrCountdownTimer = null;
 
-    function openQrDeliveryModal() {
-        if (!currentFilename) {
+    function openQrDeliveryModal(explicitFilename) {
+        if (!currentFilename && $resultPage.hasClass('stage--active')) {
             currentFilename = extractFilename();
         }
-        if (!currentFilename) {
-            console.warn('Cannot open QR modal: filename not detected');
-            return;
-        }
+        const isInGallery = $('#gallery').hasClass('gallery--open') || $('.pswp--open').length > 0;
+        const isFromStartScreen = !$resultPage.hasClass('stage--active') || isInGallery;
+        const targetFile = explicitFilename || ((!isFromStartScreen && currentFilename) ? currentFilename : 'latest');
 
-        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+        // Close any legacy modal if open
+        if (typeof photoboothTools !== 'undefined' && photoboothTools.modal && typeof photoboothTools.modal.close === 'function') {
+            photoboothTools.modal.close();
+        }
+        $('#confirmSuccessModal, #cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
         const $modal = $('#qrDeliveryModal');
         const $img = $('#qr-modal-img');
         const $spinner = $('#qr-loading-spinner');
@@ -475,11 +526,16 @@
         const $instruction = $('#qr-modal-instruction');
         const $link = $('#qr-direct-link');
         const $countVal = $('#qr-countdown-val');
+        const $countBox = $('#qr-countdown-box');
+        const $finishBtn = $('#qr-btn-finish');
+
+        if ($modal.parent()[0] !== document.body) {
+            $modal.appendTo(document.body);
+        }
 
         // Reset state
         $img.hide().attr('src', '');
         $spinner.show();
-        $countVal.text('30');
         if (qrCountdownTimer) {
             clearInterval(qrCountdownTimer);
             qrCountdownTimer = null;
@@ -487,7 +543,6 @@
 
         $modal.removeClass('hidden').attr('aria-hidden', 'false');
 
-        // Fetch QR metadata
         const apiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
             ? environment.publicFolders.api + '/qrcode.php'
             : 'api/qrcode.php';
@@ -496,37 +551,30 @@
             url: apiUrl,
             method: 'GET',
             data: {
-                filename: currentFilename,
+                filename: targetFile,
                 json: 1,
                 _t: Date.now()
             },
             dataType: 'json'
         }).done(function (data) {
             if (data && data.url) {
+                const resolvedFile = data.filename || targetFile;
                 $link.attr('href', data.url).show();
 
-                // Populate inline settings fields with current backend state
-                const mode = data.mode || (data.is_cloud ? 'cloud_web' : 'venue_wifi');
-                $('input[name="qr_delivery_mode"][value="' + mode + '"]').prop('checked', true);
-                if (data.venue_ip) $('#input-venue-ip').val(data.venue_ip);
-                if (typeof data.venue_ssid === 'string') $('#input-venue-ssid').val(data.venue_ssid);
-                if (data.cloud_url) $('#input-cloud-url').val(data.cloud_url);
-                $('#qr-fields-venue').toggle(mode === 'venue_wifi');
-                $('#qr-fields-cloud').toggle(mode === 'cloud_web');
-
-                if (data.is_cloud) {
-                    const syncTag = data.sync_status === 'synced' ? ' • Đã đồng bộ ✓' : '';
-                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Web Riêng / 4G' + syncTag + '</span>');
-                    $instruction.text('Mở camera điện thoại (dùng 4G/5G hoặc bất kỳ WiFi nào) quét mã QR để tải Ảnh & GIF về máy.');
+                $instruction.text('Mở camera điện thoại (dùng 4G/5G hoặc bất kỳ WiFi nào) quét mã QR bên dưới để tải Ảnh gốc & Ảnh động GIF về máy.');
+                if (data.sync_status === 'synced') {
+                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
+                } else if (resolvedFile && resolvedFile !== 'demo_session.jpg') {
+                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang đẩy Ảnh & GIF lên Cloud R2...</span>');
+                    triggerBackgroundCloudSync(data.session_id || resolvedFile, function (syncRes) {
+                        if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
+                            $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
+                        } else {
+                            $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-exclamation-circle"></i> <span>Chờ đồng bộ Cloud R2</span>');
+                        }
+                    });
                 } else {
-                    const ssidLabel = data.venue_ssid ? ('WiFi: ' + data.venue_ssid) : 'WiFi Địa Điểm';
-                    const ipHint = data.venue_ip ? (' (' + data.venue_ip + ')') : '';
-                    $badge.attr('class', 'qr-badge local').html('<i class="fa fa-wifi"></i> <span>' + ssidLabel + '</span>');
-                    if (data.venue_ssid) {
-                        $instruction.html('Kết nối điện thoại vào WiFi địa điểm <b>"' + data.venue_ssid + '"</b>' + ipHint + ', sau đó mở camera quét mã QR để tải Ảnh & GIF.');
-                    } else {
-                        $instruction.text('Kết nối điện thoại vào cùng mạng WiFi của địa điểm' + ipHint + ', sau đó mở camera quét mã QR để tải Ảnh & GIF.');
-                    }
+                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Sẵn sàng</span>');
                 }
 
                 $img.off('load error').on('load', function () {
@@ -536,26 +584,59 @@
                     $spinner.html('<span style="color:#ef4444;"><i class="fa fa-exclamation-triangle"></i> Lỗi tạo mã QR</span>');
                 });
 
-                const qrImgSrc = data.qr_image || (apiUrl + '?filename=' + encodeURIComponent(currentFilename) + '&_t=' + Date.now());
+                const qrImgSrc = data.qr_image || (apiUrl + '?filename=' + encodeURIComponent(resolvedFile) + '&_t=' + Date.now());
                 $img.attr('src', qrImgSrc);
             }
         }).fail(function () {
-            // Fallback direct image load
-            $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(currentFilename) + '&_t=' + Date.now()).show();
+            $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(targetFile) + '&_t=' + Date.now()).show();
             $spinner.hide();
         });
 
-        // Start 30-second countdown
-        let secondsLeft = 30;
-        qrCountdownTimer = setInterval(function () {
-            secondsLeft--;
-            $countVal.text(secondsLeft);
-            if (secondsLeft <= 0) {
-                clearInterval(qrCountdownTimer);
-                qrCountdownTimer = null;
-                window.location.assign('./');
+        if (!isFromStartScreen) {
+            $countBox.show();
+            $finishBtn.show();
+            $countVal.text('30');
+            let secondsLeft = 30;
+            qrCountdownTimer = setInterval(function () {
+                secondsLeft--;
+                $countVal.text(secondsLeft);
+                if (secondsLeft <= 0) {
+                    clearInterval(qrCountdownTimer);
+                    qrCountdownTimer = null;
+                    window.location.assign('./');
+                }
+            }, 1000);
+        } else {
+            $countBox.hide();
+            $finishBtn.toggle(!isInGallery);
+        }
+    }
+
+    // Expose globally so Gallery / History (PhotoSwipe) & core.js use this exact Cloud R2 QR modal
+    window.openCloudQrModal = openQrDeliveryModal;
+
+    function openCloudR2SetupModal() {
+        const $modal = $('#cloudR2SetupModal');
+        if ($modal.parent()[0] !== document.body) {
+            $modal.appendTo(document.body);
+        }
+        $('#qr-net-save-msg').text('');
+        $modal.removeClass('hidden').attr('aria-hidden', 'false');
+
+        const netApiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/networkMode.php'
+            : 'api/networkMode.php';
+
+        $.ajax({
+            url: netApiUrl,
+            method: 'GET',
+            dataType: 'json'
+        }).done(function (res) {
+            if (res && res.config) {
+                if (res.config.cloud_url) $('#input-cloud-url').val(res.config.cloud_url);
+                if (res.config.cloud_api_key) $('#input-cloud-key').val(res.config.cloud_api_key);
             }
-        }, 1000);
+        });
     }
 
     function closeQrDeliveryModal() {
@@ -618,6 +699,22 @@
         triggerPrintAction();
     });
 
+    $(document).on('click', '#btn-start-qr-settings', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openCloudR2SetupModal();
+    });
+
+    $(document).on('click', '#r2-setup-btn-close, #r2-setup-backdrop', function (e) {
+        e.preventDefault();
+        $('#cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
+    });
+
+    $(document).on('click', '#btn-r2-test-qr-latest', function (e) {
+        e.preventDefault();
+        openQrDeliveryModal('latest');
+    });
+
     $(document).on('click', '#modal-btn-qr, [data-command="qrbtn"], .qrbtn', function (e) {
         e.preventDefault();
         openQrDeliveryModal();
@@ -668,17 +765,13 @@
         $('#qr-fields-cloud').toggle(val === 'cloud_web');
     });
 
-    $(document).on('click', '#btn-save-qr-network', function (e) {
+    $(document).on('click', '#btn-test-cloud-r2', function (e) {
         e.preventDefault();
         keepAlive();
-        const selectedMode = $('input[name="qr_delivery_mode"]:checked').val() || 'venue_wifi';
+        const cloudUrl = ($('#input-cloud-url').val() || '').trim();
         const postData = {
-            action: 'save',
-            mode: selectedMode,
-            venue_ip: $('#input-venue-ip').val() || '',
-            venue_ssid: $('#input-venue-ssid').val() || '',
-            cloud_url: $('#input-cloud-url').val() || '',
-            cloud_api_key: $('#input-cloud-key').val() || 'tys_secret_key_2026'
+            action: 'test_cloud',
+            cloud_url: cloudUrl
         };
         if (typeof csrf !== 'undefined' && csrf.key) {
             postData[csrf.key] = csrf.token;
@@ -687,7 +780,7 @@
             ? environment.publicFolders.api + '/networkMode.php'
             : 'api/networkMode.php';
 
-        $('#qr-net-save-msg').text('Đang lưu...');
+        $('#qr-net-save-msg').css('color', '#0284c7').text('Đang kiểm tra kết nối R2...');
         $.ajax({
             url: netApiUrl,
             method: 'POST',
@@ -695,18 +788,51 @@
             dataType: 'json'
         }).done(function (res) {
             if (res && res.success) {
-                $('#qr-net-save-msg').text('Đã lưu ✓');
+                $('#qr-net-save-msg').css('color', '#10b981').text(res.message || 'Kết nối Cloud R2 thành công ✓');
+            } else {
+                $('#qr-net-save-msg').css('color', '#ef4444').text('Lỗi: ' + (res && res.error ? res.error : 'Không thể kết nối'));
+            }
+        }).fail(function () {
+            $('#qr-net-save-msg').css('color', '#ef4444').text('Không thể kiểm tra kết nối');
+        });
+    });
+
+    $(document).on('click', '#btn-save-qr-network', function (e) {
+        e.preventDefault();
+        keepAlive();
+        const postData = {
+            action: 'save',
+            mode: 'cloud_web',
+            cloud_url: ($('#input-cloud-url').val() || '').trim(),
+            cloud_api_key: ($('#input-cloud-key').val() || 'tys_secret_key_2026').trim()
+        };
+        if (typeof csrf !== 'undefined' && csrf.key) {
+            postData[csrf.key] = csrf.token;
+        }
+        const netApiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/networkMode.php'
+            : 'api/networkMode.php';
+
+        $('#qr-net-save-msg').css('color', '#0284c7').text('Đang lưu...');
+        $.ajax({
+            url: netApiUrl,
+            method: 'POST',
+            data: postData,
+            dataType: 'json'
+        }).done(function (res) {
+            if (res && res.success) {
+                $('#qr-net-save-msg').css('color', '#10b981').text('Đã lưu cấu hình Cloud R2 ✓');
                 setTimeout(function () {
-                    $('#qr-net-save-msg').text('');
-                    $('#qr-network-settings-panel').slideUp(150);
-                }, 700);
-                // Re-generate QR immediately with the new mode
-                openQrDeliveryModal();
+                    $('#cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
+                }, 800);
             }
         });
     });
 
     $(document).ready(function () {
+        // Attach modals directly to body so they work on both Start Screen and Result Screen
+        $('#confirmSuccessModal, #qrDeliveryModal, #cloudR2SetupModal').appendTo(document.body);
+
         if ($resultPage.length) {
             observer.observe($resultPage[0], { attributes: true, attributeFilter: ['class', 'data-img'] });
             if ($resultPage.hasClass('stage--active')) {
