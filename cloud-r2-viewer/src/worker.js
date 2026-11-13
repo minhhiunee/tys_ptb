@@ -15,7 +15,9 @@ const CORS_HEADERS = {
 };
 
 function sanitizeSessionId(raw) {
-  if (!raw) return '';
+  if (!raw) {
+    return '';
+  }
   // Strip file extension (.jpg, .gif, .png) if passed as image filename
   const cleaned = String(raw).trim().replace(/\.(jpg|jpeg|png|gif)$/i, '');
   const safe = cleaned.replace(/[^A-Za-z0-9._-]/g, '');
@@ -329,7 +331,7 @@ async function handleMediaStream(request, env, url) {
 }
 
 /**
- * Giao diện Web Viewer chuẩn Mobile-First cho khách quét QR
+ * Giao diện Web Viewer chuẩn Mobile & Desktop (Darkroom Print Mount & Tactile Loupe)
  */
 function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
   return `<!DOCTYPE html>
@@ -337,73 +339,70 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#090d16" />
-  <title>${brandTitle} • Tải Ảnh & GIF</title>
+  <meta name="theme-color" content="#0D1015" />
+  <title>${brandTitle} • Lưu ảnh kỷ niệm</title>
   <style>
     :root {
-      --bg: #090d16;
-      --card: rgba(18, 25, 43, 0.88);
-      --border: rgba(255, 255, 255, 0.12);
-      --accent: #38bdf8;
-      --accent-2: #6366f1;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --success: #10b981;
+      --bg: #0D1015;
+      --surface: #151A23;
+      --elevated: #1E2532;
+      --paper: #F5F2EB;
+      --border: rgba(243, 241, 236, 0.14);
+      --border-strong: rgba(243, 241, 236, 0.26);
+      --text: #F3F1EC;
+      --muted: #9BA3B2;
+      --amber: #E59A3C;
+      --amber-soft: rgba(229, 154, 60, 0.16);
+      --emerald: #1F9D6E;
+      --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
       min-height: 100dvh;
-      background: radial-gradient(circle at 50% 0%, #1e293b 0%, #090d16 70%);
+      background-color: var(--bg);
       color: var(--text);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: var(--font-sans);
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 16px 14px 36px;
+      padding: 18px 16px 40px;
     }
     .shell {
       width: 100%;
-      max-width: 460px;
+      max-width: 500px;
       display: flex;
       flex-direction: column;
       gap: 14px;
     }
+
+    /* Header tối giản theo phong cách Studio Contact Sheet */
     .header {
-      text-align: center;
-      padding: 8px 4px 2px;
-    }
-    .brand-pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 999px;
-      background: rgba(56, 189, 248, 0.12);
-      border: 1px solid rgba(56, 189, 248, 0.3);
-      color: var(--accent);
-      font-size: 11.5px;
-      font-weight: 700;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      margin-bottom: 6px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 4px 2px 6px;
+      border-bottom: 1px solid var(--border);
     }
     .header h1 {
-      font-size: 22px;
-      font-weight: 800;
+      font-size: 20px;
+      font-weight: 700;
       letter-spacing: -0.02em;
+      color: var(--text);
     }
     .header p {
       font-size: 13px;
       color: var(--muted);
-      margin-top: 3px;
+      text-align: right;
     }
 
-    /* Tabs切換 Ảnh tĩnh / Ảnh động */
+    /* Thanh chọn định dạng (Mouse Click + Touch Tap + Swipe) */
     .media-tabs {
       display: none;
-      background: rgba(15, 23, 42, 0.9);
-      border: 1px solid var(--border);
-      padding: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      padding: 5px;
       border-radius: 14px;
       gap: 6px;
     }
@@ -412,34 +411,45 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       grid-template-columns: 1fr 1fr;
     }
     .tab-btn {
-      border: none;
+      min-height: 46px;
+      border: 1px solid transparent;
       background: transparent;
       color: var(--muted);
-      padding: 10px 12px;
+      padding: 10px 14px;
       border-radius: 10px;
-      font-size: 13.5px;
+      font-family: var(--font-sans);
+      font-size: 14px;
       font-weight: 700;
       cursor: pointer;
-      transition: all 0.2s ease;
+      touch-action: manipulation;
+      user-select: none;
+      transition: background-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
+      gap: 8px;
+    }
+    .tab-btn:hover {
+      color: var(--text);
+      background: rgba(243, 241, 236, 0.05);
+    }
+    .tab-btn:active {
+      transform: scale(0.98);
     }
     .tab-btn.active {
-      background: linear-gradient(135deg, #2563eb, #0ea5e9);
-      color: #fff;
-      box-shadow: 0 4px 14px rgba(14, 165, 233, 0.35);
+      background: var(--amber);
+      color: #0D1015;
+      border-color: #F4B35E;
+      box-shadow: 0 4px 14px rgba(229, 154, 60, 0.3);
     }
 
-    /* Khung hiển thị ảnh */
+    /* Khung trưng bày bản in (Baryta Print Mount) */
     .stage-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 22px;
-      padding: 12px;
-      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-      backdrop-filter: blur(16px);
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 18px;
+      padding: 14px;
+      box-shadow: 0 24px 54px rgba(0, 0, 0, 0.65);
       position: relative;
       min-height: 360px;
       display: flex;
@@ -457,55 +467,79 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     .media-view.active {
       display: flex;
     }
+    .print-mount {
+      width: 100%;
+      background: var(--paper);
+      padding: 8px 8px 10px;
+      border-radius: 10px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: zoom-in;
+      transition: padding 0.2s ease;
+    }
+    .print-mount.zoomed {
+      padding: 2px;
+      cursor: zoom-out;
+    }
     .media-view img {
       width: 100%;
-      max-height: 68dvh;
+      max-height: 66dvh;
       object-fit: contain;
-      border-radius: 14px;
+      border-radius: 6px;
       display: block;
-      background: #0f172a;
+      background: #0D1015;
+      transition: max-height 0.2s ease;
     }
+    .print-mount.zoomed img {
+      max-height: 82dvh;
+    }
+
+    /* Dải thông số kỹ thuật dưới chân bức ảnh */
     .meta-bar {
       width: 100%;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 10px;
-      padding: 0 4px;
+      margin-top: 12px;
+      padding: 2px 4px 0;
+      font-family: var(--font-mono);
+      font-variant-numeric: tabular-nums;
       font-size: 12px;
       color: var(--muted);
     }
     .preset-tag {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--amber-soft);
+      border: 1px solid rgba(229, 154, 60, 0.4);
       padding: 3px 10px;
-      border-radius: 999px;
-      color: #e2e8f0;
+      border-radius: 6px;
+      color: var(--amber);
       font-weight: 600;
     }
 
     /* Trạng thái chờ đồng bộ */
     .state-box {
       text-align: center;
-      padding: 36px 18px;
+      padding: 40px 20px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 12px;
+      gap: 14px;
     }
     .spinner {
-      width: 42px;
-      height: 42px;
-      border: 3.5px solid rgba(56, 189, 248, 0.2);
-      border-top-color: var(--accent);
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(229, 154, 60, 0.2);
+      border-top-color: var(--amber);
       border-radius: 50%;
       animation: spin 0.85s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .state-title { font-size: 16px; font-weight: 700; }
-    .state-desc { font-size: 13px; color: var(--muted); line-height: 1.45; max-width: 300px; }
+    .state-title { font-size: 16px; font-weight: 700; color: var(--text); }
+    .state-desc { font-size: 13.5px; color: var(--muted); line-height: 1.5; max-width: 310px; }
 
-    /* Các nút tải ảnh */
+    /* Cụm nút thao tác ngón cái & chuột (Min-height 52px) */
     .actions {
       display: none;
       flex-direction: column;
@@ -516,115 +550,134 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     }
     .btn-primary, .btn-secondary, .btn-share {
       width: 100%;
-      padding: 14px 18px;
-      border-radius: 16px;
+      min-height: 52px;
+      padding: 13px 18px;
+      border-radius: 14px;
+      font-family: var(--font-sans);
       font-size: 15px;
       font-weight: 700;
       text-decoration: none;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 8px;
+      gap: 10px;
       cursor: pointer;
-      border: none;
-      transition: transform 0.15s ease, opacity 0.15s ease;
+      touch-action: manipulation;
+      user-select: none;
+      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
     }
     .btn-primary:active, .btn-secondary:active, .btn-share:active {
       transform: scale(0.98);
     }
     .btn-primary {
-      background: linear-gradient(135deg, #2563eb, #0ea5e9);
-      color: #ffffff;
-      box-shadow: 0 10px 25px rgba(14, 165, 233, 0.35);
+      background: var(--emerald);
+      border: 1px solid #28B882;
+      color: #FFFFFF;
+      box-shadow: 0 8px 22px rgba(31, 157, 110, 0.32);
+    }
+    .btn-primary:hover {
+      background: #24B27D;
     }
     .btn-secondary {
-      background: rgba(30, 41, 59, 0.9);
-      border: 1px solid rgba(56, 189, 248, 0.4);
-      color: #7dd3fc;
+      background: var(--elevated);
+      border: 1px solid rgba(229, 154, 60, 0.5);
+      color: var(--amber);
+    }
+    .btn-secondary:hover {
+      background: var(--amber);
+      color: #0D1015;
     }
     .btn-share {
-      background: rgba(255, 255, 255, 0.07);
-      border: 1px solid var(--border);
-      color: #e2e8f0;
-      font-size: 13.5px;
-      padding: 12px 16px;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      font-size: 14px;
+    }
+    .btn-share:hover {
+      background: var(--elevated);
     }
     .ios-tip {
       text-align: center;
-      font-size: 12px;
+      font-size: 12.5px;
       color: var(--muted);
-      line-height: 1.4;
-      padding: 4px 8px;
+      line-height: 1.45;
+      padding: 6px 10px;
+      background: rgba(243, 241, 236, 0.04);
+      border-radius: 10px;
+      border: 1px solid var(--border);
     }
     .footer {
-      margin-top: 8px;
+      margin-top: 6px;
       text-align: center;
-      font-size: 11.5px;
-      color: #64748b;
+      font-size: 12px;
+      color: var(--muted);
     }
   </style>
 </head>
 <body>
   <div class="shell">
-    <div class="header">
-      <div class="brand-pill">☁️ Cloud R2 Instant Delivery</div>
+    <header class="header">
       <h1>${brandTitle}</h1>
       <p>${brandSubtitle}</p>
-    </div>
+    </header>
 
     <!-- Thanh chuyển đổi Ảnh tĩnh / Ảnh động -->
-    <div id="media-tabs" class="media-tabs">
-      <button type="button" class="tab-btn active" data-target="photo">
-        📸 Ảnh Lồng Khung
+    <div id="media-tabs" class="media-tabs" role="tablist">
+      <button type="button" class="tab-btn active" data-target="photo" role="tab" aria-selected="true">
+        <span>Ảnh ghép khung</span>
       </button>
-      <button type="button" class="tab-btn" data-target="gif">
-        🎞️ Ảnh Động (x3)
+      <button type="button" class="tab-btn" data-target="gif" role="tab" aria-selected="false">
+        <span>Ảnh động GIF (x3)</span>
       </button>
     </div>
 
     <!-- Khung hiển thị chính -->
-    <div class="stage-card">
+    <div class="stage-card" id="stage-touch-surface">
       <!-- Trạng thái Loading / Đang đồng bộ từ máy chụp -->
       <div id="state-loading" class="state-box">
         <div class="spinner"></div>
-        <div class="state-title" id="loading-title">Đang tải ảnh của bạn...</div>
-        <div class="state-desc" id="loading-desc">Nếu bạn vừa chụp xong, hệ thống đang đẩy ảnh chất lượng cao và GIF lên Cloud R2 (khoảng 1–3 giây).</div>
+        <div class="state-title" id="loading-title">Đang nhận ảnh từ buồng chụp...</div>
+        <div class="state-desc" id="loading-desc">Hệ thống đang đồng bộ ảnh gốc và GIF lên đám mây (khoảng 1–3 giây).</div>
       </div>
 
       <!-- Khung xem Ảnh tĩnh -->
       <div id="view-photo" class="media-view">
-        <img id="img-photo" src="" alt="Photobooth Photo" />
+        <div class="print-mount" title="Chạm hoặc click để phóng to/thu nhỏ">
+          <img id="img-photo" src="" alt="Ảnh ghép khung Photobooth" />
+        </div>
       </div>
 
       <!-- Khung xem Ảnh động GIF -->
       <div id="view-gif" class="media-view">
-        <img id="img-gif" src="" alt="Photobooth Timelapse GIF" />
+        <div class="print-mount" title="Chạm hoặc click để phóng to/thu nhỏ">
+          <img id="img-gif" src="" alt="Ảnh động GIF Photobooth" />
+        </div>
       </div>
 
       <div id="meta-bar" class="meta-bar" style="display:none;">
-        <span id="session-label">Mã phiên: --</span>
-        <span id="preset-label" class="preset-tag">Original</span>
+        <span id="session-label">Mã: --</span>
+        <span id="preset-label" class="preset-tag">Gốc</span>
       </div>
     </div>
 
-    <!-- Các nút tải về điện thoại -->
+    <!-- Các nút tải về điện thoại / máy tính -->
     <div id="action-buttons" class="actions">
       <a id="btn-dl-photo" href="#" class="btn-primary" download>
-        ⬇️ Tải Ảnh Gốc Chất Lượng Cao (JPG)
+        <span>Tải ảnh ghép khung (JPG)</span>
       </a>
       <a id="btn-dl-gif" href="#" class="btn-secondary" style="display:none;" download>
-        🎞️ Tải Ảnh Động Tua Nhanh (GIF)
+        <span>Tải ảnh động tua nhanh (GIF)</span>
       </a>
       <button type="button" id="btn-native-share" class="btn-share" style="display:none;">
-        📲 Lưu vào Album / Chia sẻ nhanh (iOS & Android)
+        <span>Lưu thẳng vào Album / Chia sẻ nhanh</span>
       </button>
       <div class="ios-tip">
-        💡 <b>Mẹo trên iPhone/iPad:</b> Bạn cũng có thể <b>nhấn giữ trực tiếp vào bức ảnh</b> bên trên và chọn <b>"Lưu vào Ảnh" (Save to Photos)</b>.
+        Mẹo nhỏ: Bạn có thể <b>nhấn giữ trực tiếp vào bức ảnh</b> để chọn <b>"Lưu vào Ảnh"</b> trên iPhone/Android, hoặc chạm nhẹ vào ảnh để phóng lớn.
       </div>
     </div>
 
     <div class="footer">
-      Ảnh được lưu trữ an toàn trên Cloudflare R2 trong ${expireDays} ngày.
+      Bản kỷ niệm được lưu trữ trong ${expireDays} ngày.
     </div>
   </div>
 
@@ -649,6 +702,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       const btnDlPhoto = document.getElementById('btn-dl-photo');
       const btnDlGif = document.getElementById('btn-dl-gif');
       const btnNativeShare = document.getElementById('btn-native-share');
+      const stageSurface = document.getElementById('stage-touch-surface');
 
       let currentSessionData = null;
       let activeTab = 'photo';
@@ -656,28 +710,63 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
 
       if (!sessionId) {
         loadingTitle.textContent = 'Chưa có mã phiên chụp';
-        loadingDesc.textContent = 'Vui lòng quét mã QR trên màn hình Photobooth sau khi chụp để xem và tải ảnh của bạn.';
+        loadingDesc.textContent = 'Hãy quét mã QR hiển thị trên màn hình Photobooth sau khi chụp để mở trang lưu ảnh của bạn.';
         document.querySelector('.spinner').style.display = 'none';
         return;
       }
 
-      // Chuyển đổi tab Ảnh tĩnh / Ảnh động
+      function setActiveTab(target) {
+        activeTab = target;
+        document.querySelectorAll('.tab-btn').forEach((b) => {
+          const isMatch = b.getAttribute('data-target') === target;
+          b.classList.toggle('active', isMatch);
+          b.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+        });
+        viewPhoto.classList.toggle('active', target === 'photo');
+        viewGif.classList.toggle('active', target === 'gif');
+      }
+
+      // Chuyển đổi tab Ảnh tĩnh / Ảnh động bằng chuột hoặc chạm
       document.querySelectorAll('.tab-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
-          const target = btn.getAttribute('data-target');
-          activeTab = target;
-          document.querySelectorAll('.tab-btn').forEach((b) => b.classList.remove('active'));
-          btn.classList.add('active');
-          viewPhoto.classList.toggle('active', target === 'photo');
-          viewGif.classList.toggle('active', target === 'gif');
+          setActiveTab(btn.getAttribute('data-target'));
         });
       });
+
+      // Chạm hoặc click vào khung ảnh để phóng lớn / thu nhỏ
+      document.querySelectorAll('.print-mount').forEach((mount) => {
+        mount.addEventListener('click', () => {
+          mount.classList.toggle('zoomed');
+        });
+      });
+
+      // Hỗ trợ vuốt ngang (Swipe Left/Right) trên màn hình cảm ứng để đổi giữa Ảnh & GIF
+      let touchStartX = 0;
+      stageSurface.addEventListener('touchstart', (e) => {
+        if (e.touches && e.touches.length === 1) {
+          touchStartX = e.touches[0].clientX;
+        }
+      }, { passive: true });
+
+      stageSurface.addEventListener('touchend', (e) => {
+        if (!mediaTabs.classList.contains('visible')) {
+          return;
+        }
+        if (e.changedTouches && e.changedTouches.length === 1) {
+          const dx = e.changedTouches[0].clientX - touchStartX;
+          if (Math.abs(dx) > 55) {
+            setActiveTab(dx < 0 ? 'gif' : 'photo');
+          }
+        }
+      }, { passive: true });
 
       // Hỗ trợ Web Share API trên iOS / Android để lưu thẳng vào Album Ảnh
       if (navigator.share && navigator.canShare) {
         btnNativeShare.style.display = 'flex';
         btnNativeShare.addEventListener('click', async () => {
-          if (!currentSessionData) return;
+          if (!currentSessionData) {
+            return;
+          }
           const isGif = activeTab === 'gif' && currentSessionData.gif_url;
           const fileUrl = isGif ? currentSessionData.gif_url : currentSessionData.photo_url;
           const fileName = isGif
@@ -686,7 +775,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
           const mimeType = isGif ? 'image/gif' : 'image/jpeg';
 
           const origText = btnNativeShare.innerHTML;
-          btnNativeShare.innerHTML = '⏳ Đang chuẩn bị file...';
+          btnNativeShare.innerHTML = '<span>Đang chuẩn bị file...</span>';
           try {
             const res = await fetch(fileUrl);
             const blob = await res.blob();
@@ -720,9 +809,9 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
             metaBar.style.display = 'flex';
             actionButtons.classList.add('visible');
 
-            sessionLabel.textContent = 'Phiên: ' + sessionId;
+            sessionLabel.textContent = '#' + sessionId;
             const presetName = (data.metadata && data.metadata.preset) ? data.metadata.preset : 'Original';
-            presetLabel.textContent = 'Preset: ' + presetName;
+            presetLabel.textContent = 'Màu: ' + presetName;
 
             if (data.has_photo && data.photo_url) {
               imgPhoto.src = data.photo_url;
@@ -749,12 +838,12 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
           // Nếu ảnh đang trên đường tải lên R2, tự động hỏi lại sau 1.5s
           pollCount++;
           if (pollCount <= 25) {
-            loadingTitle.textContent = 'Đang đồng bộ ảnh từ Photobooth...';
-            loadingDesc.textContent = 'Vui lòng giữ màn hình này trong giây lát (' + pollCount + '). Ảnh sẽ tự động hiện ra ngay khi tải xong.';
+            loadingTitle.textContent = 'Đang đồng bộ ảnh từ buồng chụp...';
+            loadingDesc.textContent = 'Vui lòng giữ màn hình này trong giây lát (' + pollCount + '). Ảnh sẽ tự động hiển thị ngay khi tải xong.';
             setTimeout(fetchSession, 1500);
           } else {
-            loadingTitle.textContent = 'Chưa tìm thấy ảnh trên Cloud';
-            loadingDesc.textContent = 'Phiên chụp "' + sessionId + '" chưa được đồng bộ hoặc đã hết hạn lưu trữ.';
+            loadingTitle.textContent = 'Chưa tìm thấy ảnh trên đám mây';
+            loadingDesc.textContent = 'Phiên chụp "' + sessionId + '" chưa được đồng bộ hoặc đã hết thời hạn lưu trữ.';
             document.querySelector('.spinner').style.display = 'none';
           }
         } catch (err) {
@@ -762,8 +851,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
           if (pollCount <= 15) {
             setTimeout(fetchSession, 2000);
           } else {
-            loadingTitle.textContent = 'Lỗi kết nối mạng';
-            loadingDesc.textContent = 'Không thể kết nối tới máy chủ lưu trữ. Vui lòng tải lại trang.';
+            loadingTitle.textContent = 'Không thể kết nối máy chủ';
+            loadingDesc.textContent = 'Vui lòng kiểm tra kết nối 4G/WiFi và tải lại trang.';
             document.querySelector('.spinner').style.display = 'none';
           }
         }
@@ -783,7 +872,9 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
             pollCount++;
             setTimeout(checkGifUpdateSilently, 2000);
           }
-        } catch (_) {}
+        } catch (_) {
+          // Ignore background poll error
+        }
       }
 
       fetchSession();

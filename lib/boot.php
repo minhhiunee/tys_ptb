@@ -104,6 +104,14 @@ if (!isset($_SESSION['login_attempts']) || !is_array($_SESSION['login_attempts']
     $_SESSION['login_attempts'] = ['count' => 0, 'window' => time()];
 }
 
+// Release the exclusive PHP session file lock immediately for non-auth endpoints
+// so concurrent AJAX requests (Preset previews, GIF prewarm, Cloud R2 sync, QR generation)
+// never block each other. $_SESSION remains available in memory for CSRF checks.
+$requestUri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+if (!str_contains($requestUri, '/login') && !str_contains($requestUri, '/admin')) {
+    session_write_close();
+}
+
 // Basic security headers
 header('X-Frame-Options: SAMEORIGIN');
 header('X-Content-Type-Options: nosniff');
@@ -112,31 +120,35 @@ header('Referrer-Policy: same-origin');
 // Autoload
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
-FileUtility::createDirectory(PathUtility::getAbsolutePath('config'));
-FileUtility::createDirectory(FolderEnum::DATA->absolute());
-FileUtility::createDirectory(FolderEnum::IMAGES->absolute());
-FileUtility::createDirectory(FolderEnum::KEYING->absolute());
-FileUtility::createDirectory(FolderEnum::PRINT->absolute());
-FileUtility::createDirectory(FolderEnum::QR->absolute());
-FileUtility::createDirectory(FolderEnum::TEST->absolute());
-FileUtility::createDirectory(FolderEnum::THUMBS->absolute());
-FileUtility::createDirectory(FolderEnum::TEMP->absolute());
-FileUtility::createDirectory(FolderEnum::LR_IMPORT->absolute());
-FileUtility::createDirectory(FolderEnum::LR_EXPORT->absolute());
-FileUtility::createDirectory(FolderEnum::PRIVATE->absolute());
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/fonts'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/screensavers'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/background'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/frames'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/keyingBackgrounds'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/logo'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/placeholder'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/cheese'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/demo'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('private/videos/background'));
-FileUtility::createDirectory(FolderEnum::VAR->absolute());
-FileUtility::createDirectory(PathUtility::getAbsolutePath('var/log'));
-FileUtility::createDirectory(PathUtility::getAbsolutePath('var/run'));
+$dirsReadyFlag = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'photobooth_dirs_ready.flag';
+if (!is_file($dirsReadyFlag) || !is_dir(FolderEnum::IMAGES->absolute()) || !is_dir(FolderEnum::TEMP->absolute())) {
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('config'));
+    FileUtility::createDirectory(FolderEnum::DATA->absolute());
+    FileUtility::createDirectory(FolderEnum::IMAGES->absolute());
+    FileUtility::createDirectory(FolderEnum::KEYING->absolute());
+    FileUtility::createDirectory(FolderEnum::PRINT->absolute());
+    FileUtility::createDirectory(FolderEnum::QR->absolute());
+    FileUtility::createDirectory(FolderEnum::TEST->absolute());
+    FileUtility::createDirectory(FolderEnum::THUMBS->absolute());
+    FileUtility::createDirectory(FolderEnum::TEMP->absolute());
+    FileUtility::createDirectory(FolderEnum::LR_IMPORT->absolute());
+    FileUtility::createDirectory(FolderEnum::LR_EXPORT->absolute());
+    FileUtility::createDirectory(FolderEnum::PRIVATE->absolute());
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/fonts'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/screensavers'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/background'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/frames'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/keyingBackgrounds'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/logo'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/placeholder'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/cheese'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/images/demo'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('private/videos/background'));
+    FileUtility::createDirectory(FolderEnum::VAR->absolute());
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('var/log'));
+    FileUtility::createDirectory(PathUtility::getAbsolutePath('var/run'));
+    @file_put_contents($dirsReadyFlag, (string) time());
+}
 
 // Shared instances
 //

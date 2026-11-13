@@ -95,152 +95,268 @@ if ($eventTitleLines === []) {
 // actual configured custom font files are not used here.
 ?>
 <!DOCTYPE html>
-<html lang="<?= htmlspecialchars($config['ui']['language'] ?? 'en') ?>">
+<html lang="<?= htmlspecialchars($config['ui']['language'] ?? 'vi') ?>">
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <meta name="theme-color" content="<?= htmlspecialchars($config['colors']['status_bar'] ?? '#000000') ?>">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover">
+    <meta name="theme-color" content="#0D1015">
     <title><?= htmlspecialchars($pageTitle) ?></title>
-    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="%23<?= ltrim(htmlspecialchars($config['colors']['primary'] ?? '222222'), '#') ?>"/><circle cx="32" cy="32" r="14" fill="white"/><circle cx="32" cy="32" r="6" fill="%23<?= ltrim(htmlspecialchars($config['colors']['secondary'] ?? '555555'), '#') ?>"/></svg>'>
+    <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="%230D1015"/><circle cx="32" cy="32" r="14" fill="%23F5F2EB"/><circle cx="32" cy="32" r="6" fill="%23E59A3C"/></svg>'>
     <style>
         :root {
-            --viewer-bg: <?= htmlspecialchars($config['colors']['primary_light'] ?? '#f4f4f4') ?>;
-            --viewer-surface: #ffffff;
-            --viewer-primary: <?= htmlspecialchars($config['colors']['primary'] ?? '#222222') ?>;
-            --viewer-secondary: #6f675f;
-            --viewer-font: #1f1f1f;
-            --viewer-border: color-mix(in srgb, var(--viewer-primary), white 82%);
-            --viewer-button: <?= htmlspecialchars($config['colors']['primary'] ?? '#222222') ?>;
-            --viewer-button-text: #ffffff;
+            --bg: #0D1015;
+            --surface: #151A23;
+            --elevated: #1E2532;
+            --paper: #F5F2EB;
+            --border: rgba(243, 241, 236, 0.14);
+            --border-strong: rgba(243, 241, 236, 0.26);
+            --text: #F3F1EC;
+            --muted: #9BA3B2;
+            --amber: #E59A3C;
+            --amber-soft: rgba(229, 154, 60, 0.16);
+            --emerald: #1F9D6E;
+            --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
         }
 
         * {
             box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
-            margin: 0;
-            min-height: 100vh;
-            font-family: Inter, "Avenir Next", "Segoe UI", sans-serif;
-            color: var(--viewer-font);
-            background: var(--viewer-bg);
-            display: grid;
-            place-items: center;
-            padding: 16px;
+            min-height: 100dvh;
+            font-family: var(--font-sans);
+            color: var(--text);
+            background-color: var(--bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 18px 16px 40px;
         }
 
         .viewer {
-            width: min(920px, 100%);
-            background: transparent;
-        }
-
-        .viewer__inner {
-            background: var(--viewer-surface);
-            border-radius: 20px;
-            padding: 20px;
+            width: 100%;
+            max-width: 520px;
             display: flex;
             flex-direction: column;
-            gap: 18px;
-            border: 1px solid var(--viewer-border);
-            box-shadow: 0 18px 40px color-mix(in srgb, var(--viewer-primary), transparent 88%);
+            gap: 14px;
+        }
+
+        .viewer__header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 4px 2px 8px;
+            border-bottom: 1px solid var(--border);
         }
 
         .viewer__title {
-            text-align: center;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text);
+        }
+
+        .viewer__subtitle {
+            font-size: 13px;
+            color: var(--muted);
+            text-align: right;
+        }
+
+        .viewer__tabs {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            background: var(--surface);
+            border: 1px solid var(--border-strong);
+            padding: 5px;
+            border-radius: 14px;
+            gap: 6px;
+        }
+
+        .viewer__tab-btn {
+            min-height: 46px;
+            border: 1px solid transparent;
+            background: transparent;
+            color: var(--muted);
+            padding: 10px 14px;
+            border-radius: 10px;
+            font-family: var(--font-sans);
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+            transition: background-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
+        }
+
+        .viewer__tab-btn:hover {
+            color: var(--text);
+            background: rgba(243, 241, 236, 0.05);
+        }
+
+        .viewer__tab-btn:active {
+            transform: scale(0.98);
+        }
+
+        .viewer__tab-btn.active {
+            background: var(--amber);
+            color: #0D1015;
+            border-color: #F4B35E;
+            box-shadow: 0 4px 14px rgba(229, 154, 60, 0.3);
+        }
+
+        .viewer__stage {
+            background: var(--surface);
+            border: 1px solid var(--border-strong);
+            border-radius: 18px;
+            padding: 14px;
+            box-shadow: 0 24px 54px rgba(0, 0, 0, 0.65);
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            color: var(--viewer-primary);
-            font-family: "Baskerville", "Times New Roman", "Georgia", serif;
-            font-style: italic;
-            font-weight: 600;
-            font-size: clamp(28px, 4.8vw, 40px);
-            line-height: 1.05;
-            letter-spacing: 0;
+            align-items: center;
         }
 
-        .viewer__accent {
-            height: 4px;
-            border-radius: 999px;
-            background: linear-gradient(90deg, var(--viewer-primary), color-mix(in srgb, var(--viewer-primary), white 28%));
-        }
-
-        .viewer__media {
-            min-height: min(40vh, 320px);
-            max-height: 70vh;
-            border-radius: 16px;
-            overflow: hidden;
-            background: color-mix(in srgb, var(--viewer-bg), white 45%);
-            border: 1px solid var(--viewer-border);
-            display: grid;
-            place-items: center;
-            padding: 12px;
-        }
-
-        .viewer__media img,
-        .viewer__media video {
-            display: block;
-            max-width: 100%;
-            max-height: min(60vh, 720px);
-            width: auto;
-            height: auto;
-            object-fit: contain;
+        .viewer__print-mount {
+            width: 100%;
+            background: var(--paper);
+            padding: 8px 8px 10px;
             border-radius: 10px;
+            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: zoom-in;
+            transition: padding 0.2s ease;
+        }
+
+        .viewer__print-mount.zoomed {
+            padding: 2px;
+            cursor: zoom-out;
+        }
+
+        .viewer__print-mount img,
+        .viewer__print-mount video {
+            display: block;
+            width: 100%;
+            max-height: 66dvh;
+            object-fit: contain;
+            border-radius: 6px;
+            background: #0D1015;
+            transition: max-height 0.2s ease;
+        }
+
+        .viewer__print-mount.zoomed img {
+            max-height: 82dvh;
+        }
+
+        .viewer__meta {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 12px;
+            padding: 2px 4px 0;
+            font-family: var(--font-mono);
+            font-variant-numeric: tabular-nums;
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .viewer__preset-tag {
+            background: var(--amber-soft);
+            border: 1px solid rgba(229, 154, 60, 0.4);
+            padding: 3px 10px;
+            border-radius: 6px;
+            color: var(--amber);
+            font-weight: 600;
         }
 
         .viewer__actions {
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            gap: 10px;
         }
 
         .viewer__download {
-            display: inline-flex;
+            width: 100%;
+            min-height: 52px;
+            padding: 13px 18px;
+            border-radius: 14px;
+            text-decoration: none;
+            font-size: 15px;
+            font-weight: 700;
+            display: flex;
             align-items: center;
             justify-content: center;
-            min-height: 52px;
-            padding: 0 22px;
-            border-radius: 999px;
-            text-decoration: none;
-            font-weight: 700;
-            color: var(--viewer-button-text);
-            background: var(--viewer-button);
-            box-shadow: 0 10px 24px color-mix(in srgb, var(--viewer-primary), transparent 82%);
+            gap: 10px;
+            cursor: pointer;
+            touch-action: manipulation;
+            user-select: none;
+            transition: background-color 0.15s ease, transform 0.12s ease;
         }
 
-        @media (max-width: 540px) {
-            .viewer__inner {
-                padding: 14px;
-            }
+        .viewer__download:active {
+            transform: scale(0.98);
+        }
 
-            .viewer__media img,
-            .viewer__media video {
-                max-height: 52vh;
-            }
+        .viewer__download--primary {
+            background: var(--emerald);
+            border: 1px solid #28B882;
+            color: #FFFFFF;
+            box-shadow: 0 8px 22px rgba(31, 157, 110, 0.32);
+        }
+
+        .viewer__download--primary:hover {
+            background: #24B27D;
+        }
+
+        .viewer__download--secondary {
+            background: var(--elevated);
+            border: 1px solid rgba(229, 154, 60, 0.5);
+            color: var(--amber);
+        }
+
+        .viewer__download--secondary:hover {
+            background: var(--amber);
+            color: #0D1015;
+        }
+
+        .viewer__tip {
+            text-align: center;
+            font-size: 12.5px;
+            color: var(--muted);
+            line-height: 1.45;
+            padding: 6px 10px;
+            background: rgba(243, 241, 236, 0.04);
+            border-radius: 10px;
+            border: 1px solid var(--border);
         }
     </style>
 </head>
 <body>
     <main class="viewer">
-        <div class="viewer__inner">
-            <header class="viewer__title">
-                <?php foreach ($eventTitleLines as $line): ?>
-                    <span><?= htmlspecialchars($line) ?></span>
-                <?php endforeach; ?>
-            </header>
-            <div class="viewer__accent"></div>
+        <header class="viewer__header">
+            <h1 class="viewer__title"><?= htmlspecialchars(implode(' • ', $eventTitleLines)) ?></h1>
+            <p class="viewer__subtitle">Lưu ảnh kỷ niệm</p>
+        </header>
 
-            <?php if ($hasGif): ?>
-                <div class="viewer__tabs" style="display:flex; justify-content:center; gap:10px;">
-                    <button type="button" id="tab-photo" onclick="switchMedia('photo')" style="padding:8px 18px; border-radius:999px; border:1px solid var(--viewer-primary); background:var(--viewer-primary); color:#ffffff; font-weight:700; font-size:13px; cursor:pointer;">
-                        📸 Ảnh Ghép Khung
-                    </button>
-                    <button type="button" id="tab-gif" onclick="switchMedia('gif')" style="padding:8px 18px; border-radius:999px; border:1px solid var(--viewer-border); background:#f8fafc; color:var(--viewer-font); font-weight:700; font-size:13px; cursor:pointer;">
-                        🎞️ Ảnh Động (Tua nhanh)
-                    </button>
-                </div>
-            <?php endif; ?>
+        <?php if ($hasGif): ?>
+            <div class="viewer__tabs" role="tablist">
+                <button type="button" id="tab-photo" class="viewer__tab-btn active" onclick="switchMedia('photo')" role="tab" aria-selected="true">
+                    Ảnh ghép khung
+                </button>
+                <button type="button" id="tab-gif" class="viewer__tab-btn" onclick="switchMedia('gif')" role="tab" aria-selected="false">
+                    Ảnh động GIF (x3)
+                </button>
+            </div>
+        <?php endif; ?>
 
-            <div class="viewer__media" aria-label="Captured media preview">
+        <div class="viewer__stage" id="viewer-touch-surface" aria-label="Captured media preview">
+            <div class="viewer__print-mount" id="viewer-mount" title="Chạm hoặc click để phóng to/thu nhỏ">
                 <?php if ($isVideo): ?>
                     <video src="<?= htmlspecialchars($imageUrl) ?>" controls playsinline controlsList="nodownload">
                         <?= htmlspecialchars($languageService->translate('viewer_video_fallback')) ?>
@@ -252,49 +368,81 @@ if ($eventTitleLines === []) {
                     <?php endif; ?>
                 <?php endif; ?>
             </div>
+            <div class="viewer__meta">
+                <span>#<?= htmlspecialchars($sessionId) ?></span>
+                <span class="viewer__preset-tag">Màu: <?= htmlspecialchars((string) ($sessionMeta['preset'] ?? 'Original')) ?></span>
+            </div>
+        </div>
 
-            <div class="viewer__actions" style="display:flex; flex-direction:column; align-items:center; gap:10px;">
-                <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:10px; width:100%;">
-                    <a class="viewer__download" href="<?= htmlspecialchars($downloadUrl) ?>" download="<?= htmlspecialchars($image) ?>">
-                        <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                        <?= htmlspecialchars($downloadLabel) ?>
-                    </a>
-                    <?php if ($hasGif): ?>
-                        <a class="viewer__download" href="<?= htmlspecialchars($gifDownloadUrl) ?>" download="<?= htmlspecialchars($gifFile) ?>" style="background:#0284c7;">
-                            <svg style="width:20px;height:20px;margin-right:8px;vertical-align:middle;display:inline-block;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect><line x1="7" y1="2" x2="7" y2="22"></line><line x1="17" y1="2" x2="17" y2="22"></line><line x1="2" y1="12" x2="22" y2="12"></line></svg>
-                            Tải Ảnh Động (Tua nhanh)
-                        </a>
-                    <?php endif; ?>
-                </div>
-                <small style="color:var(--viewer-secondary); font-size:12px; margin-top:2px;">💡 Mẹo: Nhấn giữ vào ảnh để "Lưu vào Ảnh" (Save to Photos) nhanh trên iPhone & Android.</small>
+        <div class="viewer__actions">
+            <a class="viewer__download viewer__download--primary" href="<?= htmlspecialchars($downloadUrl) ?>" download="<?= htmlspecialchars($image) ?>">
+                <span><?= htmlspecialchars($downloadLabel) ?> (JPG)</span>
+            </a>
+            <?php if ($hasGif): ?>
+                <a class="viewer__download viewer__download--secondary" href="<?= htmlspecialchars($gifDownloadUrl) ?>" download="<?= htmlspecialchars($gifFile) ?>">
+                    <span>Tải ảnh động tua nhanh (GIF)</span>
+                </a>
+            <?php endif; ?>
+            <div class="viewer__tip">
+                Mẹo nhỏ: Nhấn giữ trực tiếp vào bức ảnh để chọn <b>"Lưu vào Ảnh"</b> trên iPhone & Android, hoặc chạm nhẹ vào ảnh để phóng lớn.
             </div>
         </div>
     </main>
-    <?php if ($hasGif): ?>
     <script>
+        (function () {
+            const mount = document.getElementById('viewer-mount');
+            if (mount) {
+                mount.addEventListener('click', function () {
+                    mount.classList.toggle('zoomed');
+                });
+            }
+        })();
+        <?php if ($hasGif): ?>
         function switchMedia(mode) {
-            var imgPhoto = document.getElementById('viewer-image');
-            var imgGif = document.getElementById('viewer-gif');
-            var tabPhoto = document.getElementById('tab-photo');
-            var tabGif = document.getElementById('tab-gif');
-            if (!imgPhoto || !imgGif) return;
+            const imgPhoto = document.getElementById('viewer-image');
+            const imgGif = document.getElementById('viewer-gif');
+            const tabPhoto = document.getElementById('tab-photo');
+            const tabGif = document.getElementById('tab-gif');
+            if (!imgPhoto || !imgGif) {
+                return;
+            }
             if (mode === 'gif') {
                 imgPhoto.style.display = 'none';
                 imgGif.style.display = 'block';
-                tabGif.style.background = 'var(--viewer-primary)';
-                tabGif.style.color = '#ffffff';
-                tabPhoto.style.background = '#f8fafc';
-                tabPhoto.style.color = 'var(--viewer-font)';
+                tabGif.classList.add('active');
+                tabGif.setAttribute('aria-selected', 'true');
+                tabPhoto.classList.remove('active');
+                tabPhoto.setAttribute('aria-selected', 'false');
             } else {
                 imgPhoto.style.display = 'block';
                 imgGif.style.display = 'none';
-                tabPhoto.style.background = 'var(--viewer-primary)';
-                tabPhoto.style.color = '#ffffff';
-                tabGif.style.background = '#f8fafc';
-                tabGif.style.color = 'var(--viewer-font)';
+                tabPhoto.classList.add('active');
+                tabPhoto.setAttribute('aria-selected', 'true');
+                tabGif.classList.remove('active');
+                tabGif.setAttribute('aria-selected', 'false');
             }
         }
+        (function () {
+            const surface = document.getElementById('viewer-touch-surface');
+            let startX = 0;
+            if (!surface) {
+                return;
+            }
+            surface.addEventListener('touchstart', function (e) {
+                if (e.touches && e.touches.length === 1) {
+                    startX = e.touches[0].clientX;
+                }
+            }, { passive: true });
+            surface.addEventListener('touchend', function (e) {
+                if (e.changedTouches && e.changedTouches.length === 1) {
+                    const dx = e.changedTouches[0].clientX - startX;
+                    if (Math.abs(dx) > 55) {
+                        switchMedia(dx < 0 ? 'gif' : 'photo');
+                    }
+                }
+            }, { passive: true });
+        })();
+        <?php endif; ?>
     </script>
-    <?php endif; ?>
 </body>
 </html>

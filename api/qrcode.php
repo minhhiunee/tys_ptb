@@ -46,22 +46,9 @@ if ($filename) {
         exit();
     }
 
-    // Load active Cloud R2 configuration (Mặc định cố định dùng Cloudflare R2)
-    $netModeFile = PathUtility::getAbsolutePath('config/network_mode.json');
-    $netConfig = [
-        'mode' => 'cloud_web',
-        'venue_ip' => trim((string) ($config['qr']['local_ip'] ?? '')),
-        'venue_ssid' => '',
-        'cloud_url' => trim((string) ($config['qr']['custom_url'] ?? $config['qr']['cloud_url'] ?? 'https://tysptb.kocodau2006.workers.dev')),
-    ];
-    if (file_exists($netModeFile)) {
-        $rawNet = @file_get_contents($netModeFile);
-        $decodedNet = $rawNet ? json_decode($rawNet, true) : null;
-        if (is_array($decodedNet)) {
-            $netConfig = array_merge($netConfig, $decodedNet);
-        }
-    }
-
+    // Load active Cloud R2 / Venue Wi-Fi configuration via SyncQueueService
+    $syncService = SyncQueueService::getInstance();
+    $netConfig = $syncService->getNetworkModeConfig();
     $activeMode = ($netConfig['mode'] === 'cloud_web' && !empty($netConfig['cloud_url'])) ? 'cloud_web' : 'venue_wifi';
     $customCloudUrl = trim((string) ($netConfig['cloud_url'] ?? ''));
     $localIp = trim((string) ($netConfig['venue_ip'] ?? ''));
@@ -82,63 +69,14 @@ if ($filename) {
         }
     }
 
-    if ($activeMode === 'cloud_web' && $customCloudUrl !== '') {
-        // HƯỚNG 2: Đẩy lên Website riêng trên Cloud R2 / Worker (4G / Any Wi-Fi)
-        $baseCloud = preg_replace('/\?.*$/', '', trim($customCloudUrl)) ?? trim($customCloudUrl);
-        $baseCloud = rtrim($baseCloud, '/');
-        if (str_ends_with($baseCloud, '/view.php')) {
-            $url = $baseCloud . '?s=' . rawurlencode($sessionId) . '&image=' . rawurlencode($filename);
-        } else {
-            $url = $baseCloud . '/?s=' . rawurlencode($sessionId);
-        }
+    $url = $syncService->resolveQrTargetUrl($filename);
 
-        // Check session sync state without blocking QR code generation
-        if (!empty($_GET['json'])) {
-            $syncService = SyncQueueService::getInstance();
-            $rec = $syncService->getSessionRecord($sessionId);
-            if (!$rec) {
-                $rec = $syncService->enqueueSession($sessionId, ['final_photo' => $filename], false);
-            }
-            $syncStatus = $rec['status'] ?? 'pending';
+    if ($activeMode === 'cloud_web' && $customCloudUrl !== '' && !empty($_GET['json'])) {
+        $rec = $syncService->getSessionRecord($sessionId);
+        if (!$rec) {
+            $rec = $syncService->enqueueSession($sessionId, ['final_photo' => $filename], false);
         }
-    } elseif ($config['ftp']['enabled'] && $config['ftp']['useForQr']) {
-        $remoteStorageService = RemoteStorageService::getInstance();
-        $url = $remoteStorageService->getWebpageUri();
-        if ($config['qr']['append_filename']) {
-            $url .= '/images/' . $filename;
-        }
-        $url = PathUtility::getPublicPath($url, true);
-    } else {
-        // HƯỚNG 1: Mạng Wi-Fi tại địa điểm (Local Venue Wi-Fi)
-        $url = $config['qr']['url'] ?? 'view.php?image=';
-        if ($config['qr']['append_filename'] ?? true) {
-            $url .= rawurlencode($filename);
-        }
-        $url = PathUtility::getPublicPath($url, true);
-
-        // Smart Local Host IP Resolution (avoids Docker internal 172.x.x.x IP)
-        if (preg_match('#://(localhost|127\.0\.0\.1|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?#', $url)) {
-            if ($localIp === '') {
-                $hostHeader = $_SERVER['HTTP_HOST'] ?? '';
-                $candidateHost = explode(':', $hostHeader)[0];
-                if (
-                    $candidateHost !== '' &&
-                    $candidateHost !== 'localhost' &&
-                    !str_starts_with($candidateHost, '127.') &&
-                    !preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\./', $candidateHost)
-                ) {
-                    $localIp = $candidateHost;
-                }
-            }
-
-            if ($localIp !== '') {
-                $url = preg_replace(
-                    '#://(localhost|127\.0\.0\.1|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)#',
-                    '://' . $localIp,
-                    $url
-                );
-            }
-        }
+        $syncStatus = $rec['status'] ?? 'pending';
     }
 
     // Ensure QR image is generated and persisted alongside the photo in data/images/qr_<sessionId>.png

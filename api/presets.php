@@ -28,6 +28,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $presetId = trim((string) ($_POST['preset'] ?? 'original'));
         $amount = isset($_POST['amount']) ? (int) $_POST['amount'] : 100;
         $amount = max(0, min(100, $amount));
+        if ($presetId === 'original') {
+            $amount = 100;
+        }
 
         // Locate source image in temp folder (data/tmp) or images folder (data/images)
         $sourceFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $file;
@@ -145,12 +148,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Final application to result image in data/images
-        // Skip redundant full-res static image re-bake if action is strictly 'bake_gif' and static preset hasn't changed
+        // Skip redundant full-res static image re-bake if static preset + amount already match what is saved on disk
         $targetFile = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $file;
         $thumbFile = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $file;
-        $staticAlreadyBaked = ($action === 'bake_gif')
-            && is_file($targetFile)
-            && (($currentMeta['preset'] ?? 'original') === $presetId)
+        $staticAlreadyBaked = is_file($targetFile)
+            && filesize($targetFile) > 1000
+            && (($currentMeta['preset'] ?? '') === $presetId)
             && ((int) ($currentMeta['preset_amount'] ?? 100) === $amount);
 
         if (!$staticAlreadyBaked) {

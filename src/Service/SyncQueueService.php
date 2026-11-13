@@ -10,6 +10,9 @@ use Psr\Log\LoggerInterface;
 
 class SyncQueueService
 {
+    public const DEFAULT_CLOUD_URL = 'https://tysptb.kocodau2006.workers.dev';
+    public const DEFAULT_API_KEY = 'tys_secret_key_2026';
+
     private static ?self $instance = null;
     protected LoggerInterface $logger;
     protected string $queueFile;
@@ -88,19 +91,105 @@ class SyncQueueService
     }
 
     /**
-     * Load dynamic network_mode.json config
+     * Normalize a Cloud Worker / Viewer URL (strip query strings and trailing slashes)
+     */
+    public static function normalizeCloudBaseUrl(string $rawUrl): string
+    {
+        $trimmed = rtrim(trim($rawUrl), '/');
+        $withoutQuery = preg_replace('/\?.*$/', '', $trimmed) ?? $trimmed;
+        return rtrim($withoutQuery, '/');
+    }
+
+    /**
+     * Load dynamic network_mode.json config with canonical defaults
      */
     public function getNetworkModeConfig(): array
     {
+        $defaults = [
+            'mode' => 'cloud_web',
+            'venue_ip' => trim((string) ($this->config['qr']['local_ip'] ?? '')),
+            'venue_ssid' => '',
+            'cloud_url' => self::normalizeCloudBaseUrl(
+                (string) ($this->config['qr']['custom_url'] ?? $this->config['qr']['cloud_url'] ?? self::DEFAULT_CLOUD_URL)
+            ),
+            'cloud_api_key' => trim((string) ($this->config['sync']['api_key'] ?? self::DEFAULT_API_KEY)),
+            'auto_compress_cloud' => true,
+            'updated_at' => time(),
+        ];
+
         $file = PathUtility::getAbsolutePath('config/network_mode.json');
         if (file_exists($file)) {
             $raw = @file_get_contents($file);
             $decoded = $raw ? json_decode($raw, true) : null;
             if (is_array($decoded)) {
-                return $decoded;
+                $merged = array_merge($defaults, $decoded);
+                $merged['cloud_url'] = self::normalizeCloudBaseUrl((string) ($merged['cloud_url'] ?? ''));
+                return $merged;
             }
         }
-        return [];
+        return $defaults;
+    }
+
+    /**
+     * Resolve QR target URL for a given photo filename according to active network mode (cloud_web or venue_wifi)
+     */
+    public function resolveQrTargetUrl(string $filename): string
+    {
+        $filename = basename($filename);
+        $sessionId = pathinfo($filename, PATHINFO_FILENAME);
+        $netCfg = $this->getNetworkModeConfig();
+        $activeMode = (($netCfg['mode'] ?? 'cloud_web') === 'cloud_web' && !empty($netCfg['cloud_url']))
+            ? 'cloud_web'
+            : 'venue_wifi';
+        $baseCloud = self::normalizeCloudBaseUrl((string) ($netCfg['cloud_url'] ?? ''));
+        $localIp = trim((string) ($netCfg['venue_ip'] ?? ''));
+
+        if ($activeMode === 'cloud_web' && $baseCloud !== '') {
+            if (str_ends_with($baseCloud, '/view.php')) {
+                return $baseCloud . '?s=' . rawurlencode($sessionId) . '&image=' . rawurlencode($filename);
+            }
+            return $baseCloud . '/?s=' . rawurlencode($sessionId);
+        }
+
+        if (!empty($this->config['ftp']['enabled']) && !empty($this->config['ftp']['useForQr'])) {
+            $remoteStorageService = RemoteStorageService::getInstance();
+            $url = $remoteStorageService->getWebpageUri();
+            if (!empty($this->config['qr']['append_filename'])) {
+                $url .= '/images/' . $filename;
+            }
+            return PathUtility::getPublicPath($url, true);
+        }
+
+        $url = (string) ($this->config['qr']['url'] ?? 'view.php?image=');
+        if ($this->config['qr']['append_filename'] ?? true) {
+            $url .= rawurlencode($filename);
+        }
+        $url = PathUtility::getPublicPath($url, true);
+
+        if (preg_match('#://(localhost|127\.0\.0\.1|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)(:\d+)?#', $url)) {
+            if ($localIp === '') {
+                $hostHeader = $_SERVER['HTTP_HOST'] ?? '';
+                $candidateHost = explode(':', $hostHeader)[0];
+                if (
+                    $candidateHost !== '' &&
+                    $candidateHost !== 'localhost' &&
+                    !str_starts_with($candidateHost, '127.') &&
+                    !preg_match('/^172\.(1[6-9]|2[0-9]|3[0-1])\./', $candidateHost)
+                ) {
+                    $localIp = $candidateHost;
+                }
+            }
+
+            if ($localIp !== '') {
+                $url = preg_replace(
+                    '#://(localhost|127\.0\.0\.1|172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+)#',
+                    '://' . $localIp,
+                    $url
+                ) ?? $url;
+            }
+        }
+
+        return $url;
     }
 
     /**
@@ -109,11 +198,8 @@ class SyncQueueService
     public function getRemoteEndpoint(): string
     {
         $netCfg = $this->getNetworkModeConfig();
-        $cloudUrl = rtrim(trim((string) ($netCfg['cloud_url'] ?? '')), '/');
+        $cloudUrl = self::normalizeCloudBaseUrl((string) ($netCfg['cloud_url'] ?? ''));
         if ($cloudUrl !== '') {
-            // Strip query params if user pasted a viewer URL like https://.../?s=123
-            $cloudUrl = preg_replace('/\?.*$/', '', $cloudUrl) ?? $cloudUrl;
-            $cloudUrl = rtrim($cloudUrl, '/');
             if (str_ends_with($cloudUrl, '.php') || str_ends_with($cloudUrl, '/api/upload')) {
                 return $cloudUrl;
             }
@@ -137,7 +223,7 @@ class SyncQueueService
         if (!empty($netCfg['cloud_api_key'])) {
             return trim((string) $netCfg['cloud_api_key']);
         }
-        return (string) ($this->config['sync']['api_key'] ?? '');
+        return (string) ($this->config['sync']['api_key'] ?? self::DEFAULT_API_KEY);
     }
 
     /**

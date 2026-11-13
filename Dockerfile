@@ -23,7 +23,7 @@ RUN echo "LimitRequestLine 12000" > /opt/docker/etc/httpd/conf.d/limits.conf \
 # Copy files
 WORKDIR /app
 COPY . .
-COPY config/php-performance.ini /opt/docker/etc/php/php.webdevops.ini
+COPY config/php-performance.ini /usr/local/etc/php/conf.d/zz-photobooth-performance.ini
 
 RUN chown -R application:application /app
 
@@ -35,3 +35,5 @@ RUN git config --global --add safe.directory /app \
     && git submodule update --init \
     && npm install \
     && npm run build
+
+USER root

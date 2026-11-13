@@ -235,7 +235,7 @@ const photoBooth = (function () {
                 if (dataUrl && dataUrl.indexOf('data:image/jpeg') === 0) {
                     api.timelapse.frames.push(dataUrl);
                 }
-            } catch (e) {
+            } catch {
                 // ignore frame sample error
             }
         },

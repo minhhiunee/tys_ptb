@@ -27,6 +27,14 @@ class ApplicationService
 
     protected function calculatePhotoboothVersion(): string
     {
+        $cacheFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'photobooth_version.cache';
+        if (is_file($cacheFile)) {
+            $cached = @file_get_contents($cacheFile);
+            if (is_string($cached) && $cached !== '') {
+                return $cached;
+            }
+        }
+
         $packageJsonPath = PathUtility::getRootPath() . DIRECTORY_SEPARATOR . 'package.json';
         if (!is_file($packageJsonPath)) {
             throw new \Exception('Package file not found.');
@@ -44,23 +52,32 @@ class ApplicationService
         $version = '';
         if ($package['version'] === self::DEV_PLACEHOLDER_VERSION) {
             $gitVersion = $this->getGitVersion();
+            $version = self::DEV_PLACEHOLDER_VERSION;
         } else {
             $version = $package['version'] ?? 'unknown';
         }
 
-        return $gitVersion ? $version . ' ' . $gitVersion : $version;
+        $finalVersion = $gitVersion ? $version . ' ' . $gitVersion : $version;
+        @file_put_contents($cacheFile, $finalVersion);
+
+        return $finalVersion;
     }
 
     private function getGitVersion(): string
     {
-        $hash = trim(shell_exec('git rev-parse --short HEAD') ?: '');
-        $date = trim(shell_exec('git log -1 --format=%cd --date=short') ?: '');
+        $gitDir = PathUtility::getRootPath() . DIRECTORY_SEPARATOR . '.git';
+        if (!is_dir($gitDir) && !is_file($gitDir)) {
+            return 'dev';
+        }
+
+        $hash = trim(shell_exec('git rev-parse --short HEAD 2>/dev/null') ?: '');
+        $date = trim(shell_exec('git log -1 --format=%cd --date=short 2>/dev/null') ?: '');
 
         if ($hash && $date) {
             return sprintf('%s-dev %s', $hash, $date);
         }
 
-        return $hash ? sprintf('%s-dev', $hash) : '';
+        return $hash ? sprintf('%s-dev', $hash) : 'dev';
     }
 
     /**

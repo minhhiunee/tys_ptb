@@ -1,6 +1,7 @@
 services:
   photobooth:
     build: .
+    user: root
     ports:
       - "80:80"
       - "443:443"
@@ -12,7 +13,7 @@ services:
       - PHP_OPCACHE_MAX_ACCELERATED_FILES=10000
       - PHP_OPCACHE_REVALIDATE_FREQ=2
     volumes:
-      - ./config/php-performance.ini:/opt/docker/etc/php/php.webdevops.ini
+      - ./config/php-performance.ini:/usr/local/etc/php/conf.d/zz-photobooth-performance.ini:ro
       - ./data:/app/data
       - ./var:/app/var
       - ./config:/app/config

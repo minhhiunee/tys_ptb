@@ -14,25 +14,9 @@ $modeFile = PathUtility::getAbsolutePath('config/network_mode.json');
 /**
  * Load current network delivery mode configuration
  */
-function loadNetworkModeConfig(string $modeFile, array $appConfig): array
+function loadNetworkModeConfig(): array
 {
-    $defaults = [
-        'mode' => 'cloud_web', // Mặc định cố định đẩy lên Cloudflare R2
-        'venue_ip' => (string) ($appConfig['qr']['local_ip'] ?? ''),
-        'venue_ssid' => '',
-        'cloud_url' => (string) ($appConfig['qr']['custom_url'] ?? 'https://tysptb.kocodau2006.workers.dev'),
-        'cloud_api_key' => (string) ($appConfig['sync']['api_key'] ?? 'tys_secret_key_2026'),
-        'auto_compress_cloud' => true,
-        'updated_at' => time(),
-    ];
-
-    if (file_exists($modeFile)) {
-        $raw = @file_get_contents($modeFile);
-        $decoded = $raw ? json_decode($raw, true) : null;
-        if (is_array($decoded)) {
-            $defaults = array_merge($defaults, $decoded);
-        }
-    }
+    $defaults = SyncQueueService::getInstance()->getNetworkModeConfig();
 
     // Auto-detect non-Docker LAN IP if venue_ip is still empty
     if (empty($defaults['venue_ip'])) {
@@ -51,7 +35,7 @@ function loadNetworkModeConfig(string $modeFile, array $appConfig): array
     return $defaults;
 }
 
-$currentConfig = loadNetworkModeConfig($modeFile, $config);
+$currentConfig = loadNetworkModeConfig();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     checkCsrfOrFail($_POST);
@@ -59,9 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? 'save';
 
     if ($action === 'test_cloud') {
-        $testUrl = rtrim(trim((string) ($_POST['cloud_url'] ?? $currentConfig['cloud_url'])), '/');
-        $testUrl = preg_replace('/\?.*$/', '', $testUrl) ?? $testUrl;
-        $testUrl = rtrim($testUrl, '/');
+        $testUrl = SyncQueueService::normalizeCloudBaseUrl((string) ($_POST['cloud_url'] ?? $currentConfig['cloud_url']));
         if ($testUrl === '') {
             echo json_encode(['success' => false, 'error' => 'Vui lòng nhập URL Cloudflare Worker / Web riêng.']);
             exit();

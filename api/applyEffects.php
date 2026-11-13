@@ -326,10 +326,7 @@ try {
 
     // Pre-generate and save the companion QR code image (qr_<sessionId>.png) alongside the photo for instant History/Gallery access
     if (isset($metaData) && is_array($metaData) && !empty($vars['sessionId'])) {
-        $netCfg = \Photobooth\Service\SyncQueueService::getInstance()->getNetworkModeConfig();
-        $cloudBase = rtrim(trim((string) ($netCfg['cloud_url'] ?? 'https://tysptb.kocodau2006.workers.dev')), '/');
-        $cloudBase = preg_replace('/\?.*$/', '', $cloudBase) ?? $cloudBase;
-        $qrTargetUrl = ($cloudBase !== '' ? $cloudBase : 'https://tysptb.kocodau2006.workers.dev') . '/?s=' . rawurlencode((string) $vars['sessionId']);
+        $qrTargetUrl = \Photobooth\Service\SyncQueueService::getInstance()->resolveQrTargetUrl((string) $vars['fileName']);
         $qrSavedFile = 'qr_' . $vars['sessionId'] . '.png';
         $qrSavedPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $qrSavedFile;
         try {

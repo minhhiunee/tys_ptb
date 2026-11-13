@@ -1,3 +1,4 @@
+/* globals api csrf photoBooth photoboothTools remoteBuzzerClient */
 /**
  * Desktop Mouse-Centric Preset Controller for Photobooth
  * Supports click selection, mouse slider drag for Amount, and Hold-to-Compare Before/After.
@@ -13,6 +14,8 @@
     let debounceTimer = null;
     let isComparing = false;
     let isViewingGif = false;
+    let hasAppliedPresetInSession = false;
+    let previewReqSeq = 0;
 
     const $presetBar = $('#desktop-preset-bar');
     const $resultPage = $('.stage[data-stage="result"]');
@@ -53,9 +56,10 @@
         currentPreset = 'original';
         currentAmount = 100;
         isViewingGif = false;
+        hasAppliedPresetInSession = false;
         $('#result-gif-viewer').addClass('hidden').attr('aria-hidden', 'true');
         $('#result-gif-img').attr('src', '');
-        $btnToggleGif.removeClass('active comparing').html('<i class="fa fa-film"></i> <span>Ảnh Động (Tua nhanh)</span>');
+        $btnToggleGif.removeClass('active comparing').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
         $amountSlider.val(100);
         $amountVal.text('100%');
 
@@ -80,7 +84,7 @@
         }
 
         $presetBar.removeClass('hidden');
-        setStatus('Ready', false);
+        setStatus('Sẵn sàng', false);
     }
 
     function applyPresetPreview(presetId, amount) {
@@ -92,6 +96,7 @@
             return;
         }
 
+        const reqId = ++previewReqSeq;
         currentPreset = presetId;
         currentAmount = amount;
 
@@ -103,6 +108,7 @@
             return;
         }
 
+        hasAppliedPresetInSession = true;
         setStatus('Rendering...', true);
 
         const postData = {
@@ -128,6 +134,9 @@
             dataType: 'json'
         })
         .done(function (data) {
+            if (reqId !== previewReqSeq) {
+                return;
+            }
             if (data && data.success && data.url) {
                 currentProcessedUrl = data.url;
                 if (!isComparing) {
@@ -140,6 +149,9 @@
             }
         })
         .fail(function (xhr, status, err) {
+            if (reqId !== previewReqSeq) {
+                return;
+            }
             console.error('Preset preview error:', err);
             setStatus('Error', false);
         });
@@ -149,7 +161,9 @@
     function scheduleBake(presetId, amount) {
         clearTimeout(bakeTimer);
         bakeTimer = setTimeout(function () {
-            if (!currentFilename) return;
+            if (!currentFilename) {
+                return;
+            }
             const postData = {
                 action: 'apply',
                 file: currentFilename,
@@ -170,6 +184,9 @@
                 dataType: 'json'
             }).done(function (data) {
                 if (data && data.success) {
+                    if (presetId === 'original') {
+                        hasAppliedPresetInSession = false;
+                    }
                     if (isViewingGif && data.gif_url) {
                         $('#result-gif-img').attr('src', data.gif_url);
                     }
@@ -221,9 +238,31 @@
         }, 80);
     });
 
+    // Tactile Stepper Buttons (- / +) for Mouse Click & Touch Tap ergonomics
+    $(document).on('click', '#btn-amount-dec, #btn-amount-inc', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        keepAlive();
+        const isInc = $(this).attr('id') === 'btn-amount-inc';
+        const cur = parseInt($('#preset-amount-slider').val(), 10) || 100;
+        const nextVal = Math.max(0, Math.min(100, cur + (isInc ? 10 : -10)));
+        $('#preset-amount-slider').val(nextVal).trigger('input');
+    });
+
+    // Horizontal Mouse-Wheel Scroll on Preset Strip
+    $(document).on('wheel', '#preset-scroll-strip', function (e) {
+        const origEvent = e.originalEvent;
+        if (origEvent && Math.abs(origEvent.deltaY) > Math.abs(origEvent.deltaX)) {
+            e.preventDefault();
+            this.scrollLeft += origEvent.deltaY;
+        }
+    });
+
     function triggerBackgroundCloudSync(filenameOrSessionId, callback) {
         if (!filenameOrSessionId) {
-            if (typeof callback === 'function') callback(null);
+            if (typeof callback === 'function') {
+                callback(null);
+            }
             return;
         }
         const sessionId = String(filenameOrSessionId).replace(/\.[^.]+$/, '');
@@ -244,14 +283,20 @@
             data: postData,
             dataType: 'json'
         }).done(function (res) {
-            if (typeof callback === 'function') callback(res);
+            if (typeof callback === 'function') {
+                callback(res);
+            }
         }).fail(function () {
-            if (typeof callback === 'function') callback(null);
+            if (typeof callback === 'function') {
+                callback(null);
+            }
         });
     }
 
     function prewarmGifInBackground(filename) {
-        if (!filename) return;
+        if (!filename) {
+            return;
+        }
         const postData = {
             action: 'bake_gif',
             file: filename,
@@ -281,7 +326,9 @@
         if (!currentFilename) {
             currentFilename = extractFilename();
         }
-        if (!currentFilename) return;
+        if (!currentFilename) {
+            return;
+        }
 
         const targetState = typeof forceState === 'boolean' ? forceState : !isViewingGif;
         isViewingGif = targetState;
@@ -291,8 +338,8 @@
             const sessionId = currentFilename.replace(/\.[^.]+$/, '');
             const gifUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.images ? environment.publicFolders.images : 'data/images') + '/' + sessionId + '.gif?v=' + Date.now();
 
-            setStatus('Đang tải Ảnh Động...', true);
-            $btn.addClass('active').html('<i class="fa fa-picture-o"></i> <span>Xem Ảnh Tĩnh</span>');
+            setStatus('Đang tải GIF...', true);
+            $btn.addClass('active').html('<i class="fa fa-picture-o" aria-hidden="true"></i> <span>Xem ảnh tĩnh</span>');
 
             const postData = {
                 action: 'bake_gif',
@@ -318,13 +365,13 @@
                 gifPreload.onload = function () {
                     if (isViewingGif) {
                         $resultPage.css('--stage-background-image', `url(${gifUrl})`);
-                        setStatus('Ảnh Động (Tua nhanh 10s)', false);
+                        setStatus('Đang xem GIF', false);
                     }
                 };
                 gifPreload.onerror = function () {
                     if (isViewingGif) {
                         $resultPage.css('--stage-background-image', `url(${gifUrl})`);
-                        setStatus('Ảnh Động (Tua nhanh 10s)', false);
+                        setStatus('Đang xem GIF', false);
                     }
                 };
                 gifPreload.src = gifUrl;
@@ -335,8 +382,8 @@
             if (staticUrl) {
                 $resultPage.css('--stage-background-image', `url(${staticUrl})`);
             }
-            $btn.removeClass('active').html('<i class="fa fa-film"></i> <span>Ảnh Động (Tua nhanh)</span>');
-            setStatus('Ready', false);
+            $btn.removeClass('active').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
+            setStatus('Sẵn sàng', false);
         }
     }
 
@@ -358,7 +405,9 @@
     // Before / After Hold (Mouse down / Touch start = view original, release = view preset)
     $btnCompare.on('mousedown touchstart', function (e) {
         e.preventDefault();
-        if (currentPreset === 'original') return;
+        if (currentPreset === 'original') {
+            return;
+        }
         isComparing = true;
         $(this).addClass('comparing');
         $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
@@ -389,10 +438,14 @@
             $('.preset-btn[data-preset="original"]').trigger('click');
         } else if (e.key === '2') {
             const $btn = $('.preset-btn').eq(1);
-            if ($btn.length) $btn.trigger('click');
+            if ($btn.length) {
+                $btn.trigger('click');
+            }
         } else if (e.key === '3') {
             const $btn = $('.preset-btn').eq(2);
-            if ($btn.length) $btn.trigger('click');
+            if ($btn.length) {
+                $btn.trigger('click');
+            }
         } else if (e.key === '\\') {
             // Toggle before/after
             isComparing = !isComparing;
@@ -446,11 +499,13 @@
 
     function forceBakeNow(presetId, amount, callback) {
         clearTimeout(bakeTimer);
-        if (!currentFilename || !presetId || presetId === 'original') {
+        if (!currentFilename || !presetId || (presetId === 'original' && !hasAppliedPresetInSession)) {
             if (currentFilename) {
                 triggerBackgroundCloudSync(currentFilename);
             }
-            if (typeof callback === 'function') callback();
+            if (typeof callback === 'function') {
+                callback();
+            }
             return;
         }
         setStatus('Saving...', true);
@@ -474,34 +529,40 @@
             data: postData,
             dataType: 'json'
         }).always(function () {
+            if (presetId === 'original') {
+                hasAppliedPresetInSession = false;
+            }
             setStatus('Ready', false);
             triggerBackgroundCloudSync(currentFilename);
-            if (typeof callback === 'function') callback();
+            if (typeof callback === 'function') {
+                callback();
+            }
         });
     }
 
-    // Direct QR button on Preset Bar -> bake current preset and immediately show QR code!
+    // Direct QR button on Preset Bar -> immediately open QR modal while baking & syncing in background!
     $(document).on('click', '#btn-preset-qr', function (e) {
         e.preventDefault();
         keepAlive();
-        const $btn = $(this);
-        $btn.css('opacity', '0.7').prop('disabled', true);
+        openQrDeliveryModal();
         forceBakeNow(currentPreset, currentAmount, function () {
-            $btn.css('opacity', '1').prop('disabled', false);
-            openQrDeliveryModal();
+            const $badge = $('#qr-mode-badge');
+            if ($badge.hasClass('cloud') && currentFilename) {
+                triggerBackgroundCloudSync(currentFilename, function (syncRes) {
+                    if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
+                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
+                    }
+                });
+            }
         });
     });
 
-    // Confirm button on Result Screen
+    // Confirm button on Result Screen -> immediately open Confirm & Print modal while baking in background!
     $(document).on('click', '#btn-preset-confirm', function (e) {
         e.preventDefault();
         keepAlive();
-        const $btn = $(this);
-        $btn.css('opacity', '0.7').prop('disabled', true);
-        forceBakeNow(currentPreset, currentAmount, function () {
-            $btn.css('opacity', '1').prop('disabled', false);
-            $('#confirmSuccessModal').removeClass('hidden').attr('aria-hidden', 'false');
-        });
+        $('#confirmSuccessModal').removeClass('hidden').attr('aria-hidden', 'false');
+        forceBakeNow(currentPreset, currentAmount);
     });
 
     let qrCountdownTimer = null;
@@ -561,20 +622,25 @@
                 const resolvedFile = data.filename || targetFile;
                 $link.attr('href', data.url).show();
 
-                $instruction.text('Mở camera điện thoại (dùng 4G/5G hoặc bất kỳ WiFi nào) quét mã QR bên dưới để tải Ảnh gốc & Ảnh động GIF về máy.');
-                if (data.sync_status === 'synced') {
-                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
-                } else if (resolvedFile && resolvedFile !== 'demo_session.jpg') {
-                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang đẩy Ảnh & GIF lên Cloud R2...</span>');
-                    triggerBackgroundCloudSync(data.session_id || resolvedFile, function (syncRes) {
-                        if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
-                            $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
-                        } else {
-                            $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-exclamation-circle"></i> <span>Chờ đồng bộ Cloud R2</span>');
-                        }
-                    });
+                if (data.mode === 'venue_wifi') {
+                    $badge.attr('class', 'qr-badge local').html('<i class="fa fa-wifi"></i> <span>Wi-Fi Nội Bộ (LAN) • Tải trực tiếp</span>');
+                    $instruction.text('Kết nối cùng mạng Wi-Fi với máy Photobooth, sau đó mở camera quét mã QR bên dưới để tải Ảnh gốc & GIF.');
                 } else {
-                    $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Sẵn sàng</span>');
+                    $instruction.text('Mở camera điện thoại (dùng 4G/5G hoặc bất kỳ WiFi nào) quét mã QR bên dưới để tải Ảnh gốc & Ảnh động GIF về máy.');
+                    if (data.sync_status === 'synced') {
+                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
+                    } else if (resolvedFile && resolvedFile !== 'demo_session.jpg') {
+                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang đẩy Ảnh & GIF lên Cloud R2...</span>');
+                        triggerBackgroundCloudSync(data.session_id || resolvedFile, function (syncRes) {
+                            if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
+                                $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
+                            } else {
+                                $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-exclamation-circle"></i> <span>Chờ đồng bộ Cloud R2</span>');
+                            }
+                        });
+                    } else {
+                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Sẵn sàng</span>');
+                    }
                 }
 
                 $img.off('load error').on('load', function () {
@@ -595,8 +661,8 @@
         if (!isFromStartScreen) {
             $countBox.show();
             $finishBtn.show();
-            $countVal.text('30');
-            let secondsLeft = 30;
+            $countVal.text('45');
+            let secondsLeft = 45;
             qrCountdownTimer = setInterval(function () {
                 secondsLeft--;
                 $countVal.text(secondsLeft);
@@ -633,8 +699,19 @@
             dataType: 'json'
         }).done(function (res) {
             if (res && res.config) {
-                if (res.config.cloud_url) $('#input-cloud-url').val(res.config.cloud_url);
-                if (res.config.cloud_api_key) $('#input-cloud-key').val(res.config.cloud_api_key);
+                const mode = res.config.mode === 'venue_wifi' ? 'venue_wifi' : 'cloud_web';
+                $('input[name="qr_delivery_mode"][value="' + mode + '"]').prop('checked', true);
+                $('#qr-fields-venue').toggle(mode === 'venue_wifi');
+                $('#qr-fields-cloud').toggle(mode === 'cloud_web');
+                if (res.config.cloud_url) {
+                    $('#input-cloud-url').val(res.config.cloud_url);
+                }
+                if (res.config.cloud_api_key) {
+                    $('#input-cloud-key').val(res.config.cloud_api_key);
+                }
+                if (typeof res.config.venue_ip === 'string') {
+                    $('#input-venue-ip').val(res.config.venue_ip);
+                }
             }
         });
     }
@@ -745,17 +822,18 @@
         window.location.assign('./');
     });
 
-    $(document).on('click', '#modal-btn-close, .confirm-modal-backdrop', function (e) {
+    $(document).on('click', '#modal-btn-close, #modal-btn-close-text, .confirm-modal-backdrop', function (e) {
         e.preventDefault();
         $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
     });
 
-    // Toggle inline QR Network Mode settings (Hướng 1 vs Hướng 2)
+    // Toggle QR Network Mode settings (Hướng 1 vs Hướng 2) from QR modal or Start screen
     $(document).on('click', '#btn-toggle-qr-settings', function (e) {
         e.preventDefault();
+        e.stopPropagation();
         keepAlive();
-        const $panel = $('#qr-network-settings-panel');
-        $panel.slideToggle(180);
+        closeQrDeliveryModal();
+        openCloudR2SetupModal();
     });
 
     $(document).on('change', 'input[name="qr_delivery_mode"]', function () {
@@ -800,9 +878,11 @@
     $(document).on('click', '#btn-save-qr-network', function (e) {
         e.preventDefault();
         keepAlive();
+        const selectedMode = $('input[name="qr_delivery_mode"]:checked').val() || 'cloud_web';
         const postData = {
             action: 'save',
-            mode: 'cloud_web',
+            mode: selectedMode,
+            venue_ip: ($('#input-venue-ip').val() || '').trim(),
             cloud_url: ($('#input-cloud-url').val() || '').trim(),
             cloud_api_key: ($('#input-cloud-key').val() || 'tys_secret_key_2026').trim()
         };
@@ -821,7 +901,8 @@
             dataType: 'json'
         }).done(function (res) {
             if (res && res.success) {
-                $('#qr-net-save-msg').css('color', '#10b981').text('Đã lưu cấu hình Cloud R2 ✓');
+                const modeLabel = selectedMode === 'venue_wifi' ? 'Wi-Fi Nội Bộ (LAN)' : 'Cloud R2';
+                $('#qr-net-save-msg').css('color', '#10b981').text('Đã lưu chế độ ' + modeLabel + ' ✓');
                 setTimeout(function () {
                     $('#cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
                 }, 800);
