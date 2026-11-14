@@ -220,14 +220,20 @@ const photoboothTools = (function () {
     };
 
     api.initialize = async function () {
-        const resultTranslations = await fetch(addCsrfToUrl(environment.publicFolders.api + '/translations.php'), {
-            cache: 'no-store'
-        });
-        this.translations = await resultTranslations.json();
-        const resultSounds = await fetch(addCsrfToUrl(environment.publicFolders.api + '/sounds.php'), {
-            cache: 'no-store'
-        });
-        this.sounds = await resultSounds.json();
+        const [resultTranslations, resultSounds] = await Promise.all([
+            fetch(addCsrfToUrl(environment.publicFolders.api + '/translations.php'), {
+                cache: 'no-store'
+            }),
+            fetch(addCsrfToUrl(environment.publicFolders.api + '/sounds.php'), {
+                cache: 'no-store'
+            })
+        ]);
+        const [translations, sounds] = await Promise.all([
+            resultTranslations.json(),
+            resultSounds.json()
+        ]);
+        this.translations = translations;
+        this.sounds = sounds;
         this.registerEvents();
     };
 
@@ -514,7 +520,7 @@ const photoboothTools = (function () {
 
     api.reloadPage = function () {
         const url = new URL(window.location.href);
-        url.searchParams.set('refresh', '1');
+        url.searchParams.delete('refresh');
         window.location.href = url.toString();
     };
 

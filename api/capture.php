@@ -85,9 +85,29 @@ try {
         && strpos($_POST['canvasimg'], 'data:image/') === 0
         && strlen($_POST['canvasimg']) > 5000;
 
+    $c1Service = \Photobooth\Service\CaptureOneIntegrationService::getInstance();
+    $isC1TetheredCamera = $c1Service->isEnabled() && $c1Service->getCameraMode() === 'capture_one_owns_camera';
+
     if ($_POST['style'] === 'video') {
         $captureHandler->captureCmd = $config['commands']['take_video'];
         $captureHandler->captureWithCmd();
+    } elseif ($isC1TetheredCamera) {
+        // Option A: Capture One Owns Camera (USB Tethered directly to Capture One Session).
+        // Seed a placeholder from Mock/Canvas only if Capture One times out and fallback is enabled.
+        $tetherSessionId = pathinfo($file, PATHINFO_FILENAME);
+        $tetherPoseIdx = ($_POST['style'] === 'collage' && isset($_POST['collageNumber'])) ? (int) $_POST['collageNumber'] : 0;
+        if ($hasValidCanvasImg) {
+            $captureHandler->flipImage = $config['preview']['flip'];
+            $captureHandler->captureCanvas($_POST['canvasimg']);
+        } elseif (!file_exists($captureHandler->tmpFile)) {
+            $captureHandler->captureDemo();
+        }
+        $c1Res = $c1Service->processCapturedPose($captureHandler->tmpFile, $tetherSessionId, $tetherPoseIdx);
+        $captureHandler->providerMeta = [
+            'provider' => $c1Res['provider'] ?? 'capture_one',
+            'is_mock' => !empty($c1Res['fallback_used']),
+            'capture_time_ms' => (int) round((float) ($c1Res['elapsed_ms'] ?? 0)),
+        ];
     } elseif ($config['preview']['mode'] === 'device_cam' && $config['preview']['camTakesPic'] && $hasValidCanvasImg) {
         $captureHandler->flipImage = $config['preview']['flip'];
         $captureHandler->captureCanvas($_POST['canvasimg']);
@@ -110,6 +130,7 @@ try {
         $captureHandler->captureWithCmd();
     }
     // Save fast-forward time-lapse frames captured during countdown + cheese for this pose
+    $savedTlPaths = [];
     if (!empty($_POST['timelapseFrames']) && is_string($_POST['timelapseFrames'])) {
         $tlSessionId = pathinfo($file, PATHINFO_FILENAME);
         $tlPoseIdx = ($_POST['style'] === 'collage' && isset($_POST['collageNumber'])) ? (int) $_POST['collageNumber'] : 0;
@@ -152,6 +173,7 @@ try {
                             imagedestroy($tlIm);
                         }
                     }
+                    $savedTlPaths[] = $tlFilePath;
                     $savedCount++;
                     if ($savedCount >= 30) {
                         break;
@@ -161,9 +183,49 @@ try {
         }
     }
 
+    // Color workflow
+    //  Mode 1 (default): bake the base color grade into this shot + its time-lapse frames right after capture,
+    //                    so the result screen needs no color processing at all.
+    //  Mode 2 (admin opt-in): keep shots pristine; warm presets in the background after the response.
+    $colorWorkflow = \Photobooth\Service\ColorWorkflowService::getInstance();
+    $deferredGradePaths = [];
+    $gradeFlagFile = null;
+    if (in_array($_POST['style'], ['photo', 'collage', 'custom'], true) && $colorWorkflow->shouldGradeAtIngest()) {
+        // The shot itself is graded now (via Capture One or internal LUT); its time-lapse frames are graded right
+        // after the response is flushed when possible, so the shutter / next countdown never waits for them.
+        $tlSession = pathinfo($file, PATHINFO_FILENAME);
+        $tlPose = ($_POST['style'] === 'collage' && isset($_POST['collageNumber'])) ? (int) $_POST['collageNumber'] : 0;
+        $canDefer = function_exists('fastcgi_finish_request') && !empty($savedTlPaths);
+
+        if (!$isC1TetheredCamera) {
+            $shotStats = $colorWorkflow->processPrimaryCapture($captureHandler->tmpFile, $tlSession, $tlPose);
+            $logger->debug('Primary capture color workflow completed', $shotStats);
+        }
+
+        if (!empty($savedTlPaths)) {
+            if ($canDefer) {
+                $deferredGradePaths = $savedTlPaths;
+                $gradeFlagFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('tl_%s_p%02d.grading', $tlSession, $tlPose);
+                @file_put_contents($gradeFlagFile, (string) time());
+            } else {
+                $colorWorkflow->gradeFilesInPlace($savedTlPaths);
+            }
+        }
+    }
+
     // send image to frontend
     \Photobooth\Service\StorageMaintenanceService::getInstance()->runProbabilisticCleanup(20);
     echo json_encode($captureHandler->returnData());
+
+    if (function_exists('fastcgi_finish_request') && ($gradeFlagFile !== null || $colorWorkflow->isInteractive())) {
+        fastcgi_finish_request();
+        if ($gradeFlagFile !== null) {
+            $colorWorkflow->gradeFilesInPlace($deferredGradePaths);
+            @unlink($gradeFlagFile);
+        } else {
+            $colorWorkflow->warmUpPresets();
+        }
+    }
     exit();
 } catch (\Exception $e) {
     $data = ['error' => $e->getMessage()];

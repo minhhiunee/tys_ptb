@@ -6,6 +6,7 @@ namespace Photobooth\Service;
 
 use Photobooth\Enum\FolderEnum;
 use Photobooth\Utility\PathUtility;
+use Photobooth\Utility\QrCodeUtility;
 use Psr\Log\LoggerInterface;
 
 class SyncQueueService
@@ -193,6 +194,87 @@ class SyncQueueService
     }
 
     /**
+     * Resolve QR code metadata & ensure qr_<sessionId>.png exists on disk for fast frontend rendering.
+     *
+     * @return array<string, mixed>
+     */
+    public function buildSessionQrData(string $filename, array $sessionMeta = [], bool $forceRegenerate = false): array
+    {
+        $filename = basename($filename);
+        $sessionId = pathinfo($filename, PATHINFO_FILENAME);
+        $netConfig = $this->getNetworkModeConfig();
+        $activeMode = (($netConfig['mode'] ?? 'cloud_web') === 'cloud_web' && !empty($netConfig['cloud_url']))
+            ? 'cloud_web'
+            : 'venue_wifi';
+        $customCloudUrl = trim((string) ($netConfig['cloud_url'] ?? ''));
+        $localIp = trim((string) ($netConfig['venue_ip'] ?? ''));
+        $venueSsid = trim((string) ($netConfig['venue_ssid'] ?? ''));
+
+        $imagesDir = FolderEnum::IMAGES->absolute();
+        $metaFilePath = $imagesDir . DIRECTORY_SEPARATOR . 'meta_' . $filename . '.json';
+        $savedQrFileName = 'qr_' . $sessionId . '.png';
+        $savedQrPath = $imagesDir . DIRECTORY_SEPARATOR . $savedQrFileName;
+
+        if (empty($sessionMeta) && is_file($metaFilePath)) {
+            $decodedMeta = json_decode((string) @file_get_contents($metaFilePath), true);
+            if (is_array($decodedMeta)) {
+                $sessionMeta = $decodedMeta;
+            }
+        }
+
+        $url = $this->resolveQrTargetUrl($filename);
+        $syncStatus = null;
+        if ($activeMode === 'cloud_web' && $customCloudUrl !== '') {
+            $rec = $this->getSessionRecord($sessionId);
+            if (!$rec) {
+                $rec = $this->enqueueSession($sessionId, ['final_photo' => $filename], false);
+            }
+            $syncStatus = $rec['status'] ?? 'pending';
+        }
+
+        $needGenerateQrFile = $forceRegenerate
+            || !is_file($savedQrPath)
+            || (($sessionMeta['qr_url'] ?? '') !== $url);
+
+        if ($needGenerateQrFile) {
+            try {
+                $qrResult = QrCodeUtility::create($url);
+                @file_put_contents($savedQrPath, $qrResult->getString());
+                $sessionMeta['session_id'] = $sessionMeta['session_id'] ?? $sessionId;
+                $sessionMeta['final_photo'] = $sessionMeta['final_photo'] ?? $filename;
+                $sessionMeta['qr_url'] = $url;
+                $sessionMeta['qr_file'] = $savedQrFileName;
+                @file_put_contents(
+                    $metaFilePath,
+                    json_encode($sessionMeta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
+                );
+            } catch (\Throwable) {
+                // fallback to on-the-fly rendering via api/qrcode.php
+            }
+        }
+
+        $qrPublicUrl = is_file($savedQrPath)
+            ? PathUtility::getPublicPath('data/images/' . $savedQrFileName) . '?v=' . (int) @filemtime($savedQrPath)
+            : PathUtility::getPublicPath('api/qrcode.php?filename=' . rawurlencode($filename) . '&mode=' . $activeMode . '&v=' . ($netConfig['updated_at'] ?? time()));
+
+        return [
+            'success' => true,
+            'mode' => $activeMode,
+            'url' => $url,
+            'qr_image' => $qrPublicUrl,
+            'qr_file' => is_file($savedQrPath) ? $savedQrFileName : null,
+            'filename' => $filename,
+            'session_id' => $sessionId,
+            'is_cloud' => ($activeMode === 'cloud_web'),
+            'is_local' => ($activeMode === 'venue_wifi'),
+            'venue_ip' => $localIp,
+            'venue_ssid' => $venueSsid,
+            'cloud_url' => $customCloudUrl,
+            'sync_status' => $syncStatus,
+        ];
+    }
+
+    /**
      * Resolve remote sync endpoint for the active environment or Cloud Web mode
      */
     public function getRemoteEndpoint(): string
@@ -290,12 +372,12 @@ class SyncQueueService
             'metadata' => json_encode($item['metadata'] ?? [], JSON_UNESCAPED_UNICODE),
         ];
 
-        // Attach final photo (optionally compressed to fast Full HD for instant 4G/Cloud upload)
+        // Attach final photo (always compressed to fast mobile HD for instant 4G/Cloud R2 upload)
         $finalPath = $imagesDir . DIRECTORY_SEPARATOR . $finalFileName;
         if (is_file($finalPath)) {
             $uploadPath = $finalPath;
-            if ($autoCompress && filesize($finalPath) > 900 * 1024) {
-                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath);
+            if ($autoCompress && filesize($finalPath) > 350 * 1024) {
+                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 1600, 84);
                 if ($tempCompressedFile !== null) {
                     $uploadPath = $tempCompressedFile;
                 }
@@ -313,8 +395,8 @@ class SyncQueueService
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $postFields,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT => 20,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 90,
             CURLOPT_HTTPHEADER => [
                 'X-Photobooth-Api-Key: ' . $apiKey,
                 'X-Photobooth-Session: ' . $sessionId,
@@ -365,7 +447,10 @@ class SyncQueueService
         $succeeded = 0;
         $failed = 0;
 
-        foreach ($queue as $sessionId => $item) {
+        // Prioritize newest sessions first so active guests at the venue get synced immediately
+        $reversedQueue = array_reverse($queue, true);
+
+        foreach ($reversedQueue as $sessionId => $item) {
             if ($processed >= $maxBatch) {
                 break;
             }
@@ -472,8 +557,29 @@ class SyncQueueService
     /**
      * Create an optimized Full-HD JPEG copy for rapid Cloud upload without modifying the local print file
      */
-    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1920, int $quality = 88): ?string
+    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1600, int $quality = 84): ?string
     {
+        $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_cloud_' . uniqid('', true) . '.jpg';
+        if (extension_loaded('imagick')) {
+            try {
+                $im = new \Imagick($sourcePath);
+                if ($im->getImageWidth() > $maxDim || $im->getImageHeight() > $maxDim) {
+                    $im->thumbnailImage($maxDim, $maxDim, true, true);
+                }
+                $im->stripImage();
+                $im->setImageFormat('jpeg');
+                $im->setImageCompressionQuality($quality);
+                $ok = $im->writeImage($tmpFile);
+                $im->clear();
+                $im->destroy();
+                if ($ok && is_file($tmpFile)) {
+                    return $tmpFile;
+                }
+            } catch (\Throwable) {
+                // Fall back to GD below
+            }
+        }
+
         try {
             $info = @getimagesize($sourcePath);
             if (!$info) {
@@ -499,7 +605,6 @@ class SyncQueueService
                 return null;
             }
             imagecopyresampled($dst, $src, 0, 0, 0, 0, $nw, $nh, $w, $h);
-            $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_cloud_' . uniqid('', true) . '.jpg';
             $ok = imagejpeg($dst, $tmpFile, $quality);
             imagedestroy($src);
             imagedestroy($dst);

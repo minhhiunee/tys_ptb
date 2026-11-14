@@ -112,15 +112,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $previewBaseFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'preview_base_' . $file;
             $previewSource = file_exists($previewBaseFile) ? $previewBaseFile : $baseSourceFile;
 
-            $success = $presetService->applyPreset($previewSource, $targetFile, $presetId, $amount);
+            $frameOverlay = ($presetId !== 'original' && $amount > 0 && $framePngPath && file_exists($framePngPath))
+                ? $framePngPath
+                : null;
+            $success = $presetService->applyPreset($previewSource, $targetFile, $presetId, $amount, $frameOverlay, 86);
 
             if (!$success || !file_exists($targetFile)) {
                 throw new \Exception('Failed generating preset preview');
-            }
-
-            // Re-apply pristine frame overlay to ensure frame colors, logos, and borders are unaffected (quality 88 for fast preview)
-            if ($framePngPath && file_exists($framePngPath)) {
-                reapplyFrameOverlay($targetFile, $framePngPath, 88);
             }
 
             echo json_encode([
@@ -157,14 +155,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             && ((int) ($currentMeta['preset_amount'] ?? 100) === $amount);
 
         if (!$staticAlreadyBaked) {
-            $success = $presetService->applyPreset($baseSourceFile, $targetFile, $presetId, $amount);
+            $frameOverlay = ($presetId !== 'original' && $amount > 0 && $framePngPath && file_exists($framePngPath))
+                ? $framePngPath
+                : null;
+            $success = $presetService->applyPreset($baseSourceFile, $targetFile, $presetId, $amount, $frameOverlay, 94);
             if (!$success) {
                 throw new \Exception('Failed applying preset to image');
-            }
-
-            // Re-apply pristine frame overlay on baked image
-            if ($framePngPath && file_exists($framePngPath)) {
-                reapplyFrameOverlay($targetFile, $framePngPath);
             }
 
             // Regenerate thumbnail if needed
@@ -236,8 +232,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $poseFrameSequences,
                                     $layoutData,
                                     $gifTargetPath,
-                                    140,
-                                    480,
+                                    210,
+                                    720,
                                     $presetId,
                                     $amount,
                                     $baseSourceFile
@@ -260,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                         }
                         if (!empty($poseAbsPaths)) {
-                            $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 140, 480, $presetId, $amount);
+                            $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 210, 720, $presetId, $amount);
                         }
                     }
                 }
@@ -291,8 +287,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
         // Update offline-first sync queue with newly baked preset
+        $syncService = \Photobooth\Service\SyncQueueService::getInstance();
         try {
-            \Photobooth\Service\SyncQueueService::getInstance()->enqueueSession($sessionId, [
+            $syncService->enqueueSession($sessionId, [
                 'final_photo' => $file,
                 'gif_photo' => $currentMeta['gif_photo'] ?? null,
                 'original_photos' => $currentMeta['original_photos'] ?? [],
@@ -302,6 +299,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $logger->warning('Preset sync queue update warning: ' . $syncErr->getMessage());
         }
 
+        $qrPayload = !empty($_POST['include_qr'])
+            ? $syncService->buildSessionQrData($file, $currentMeta, false)
+            : null;
+
         echo json_encode([
             'success' => true,
             'file' => $file,
@@ -309,6 +310,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'gif_url' => $gifUrl,
             'preset' => $presetId,
             'amount' => $amount,
+            'qr' => $qrPayload,
         ]);
         exit();
     } catch (\Throwable $e) {

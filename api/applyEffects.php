@@ -62,6 +62,18 @@ try {
 
     $vars['preset'] = !empty($_POST['preset']) ? (string) $_POST['preset'] : null;
     $vars['preset_amount'] = isset($_POST['preset_amount']) ? (int) $_POST['preset_amount'] : 100;
+
+    // Mode 1 (default) or Capture One External Provider: base grade was already baked at capture time (api/capture.php); record it in metadata
+    $colorWorkflow = \Photobooth\Service\ColorWorkflowService::getInstance();
+    $c1Service = \Photobooth\Service\CaptureOneIntegrationService::getInstance();
+    $vars['baseGrade'] = $colorWorkflow->shouldGradeAtIngest()
+        ? [
+            'provider' => $c1Service->isEnabled() ? 'capture_one' : 'internal_lut',
+            'preset' => $colorWorkflow->getBasePresetId(),
+            'amount' => $colorWorkflow->getBaseAmount(),
+            'process_recipe' => $c1Service->isEnabled() ? $c1Service->getProcessRecipe() : null,
+        ]
+        : null;
 } catch (\Exception $e) {
     // Handle the exception
     $logger->error($e->getMessage(), $_POST);
@@ -118,6 +130,11 @@ try {
     }
 
     // Collect fast-forward time-lapse frames recorded during 10s countdown + cheese, grouped by pose
+    // (Mode 1: wait briefly for api/capture.php to finish baking the base grade into the last pose's frames)
+    $tlGradeWaitUntil = microtime(true) + 8.0;
+    while (microtime(true) < $tlGradeWaitUntil && !empty(glob(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'tl_' . $vars['sessionId'] . '_p*.grading'))) {
+        usleep(100000);
+    }
     $tlTempPattern = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'tl_' . $vars['sessionId'] . '_p*.jpg';
     $tlTempFiles = glob($tlTempPattern) ?: [];
     if (!empty($tlTempFiles)) {
@@ -161,7 +178,21 @@ try {
         [$vars['collageSrcImagePaths'], $vars['srcImages']] = Collage::getCollageFiles($config['collage'], $vars['tmpFile'], $vars['fileName'], $vars['srcImages']);
 
         // Preserve raw pose files (or restore them if re-running filter on Result screen after unlink)
+        $vars['savedRawUngradedPoses'] = [];
         foreach ($vars['collageSrcImagePaths'] as $poseIdx => $posePath) {
+            // If Capture One is enabled and this sub-file wasn't processed yet at capture.php, process it BEFORE Collage::createCollage
+            $rawUngradedTmp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('raw_ungraded_%s_p%02d.jpg', $vars['sessionId'], $poseIdx);
+            if ($c1Service->isEnabled() && empty($_POST['skip_capture_one']) && is_string($posePath) && file_exists($posePath) && !is_file($rawUngradedTmp)) {
+                $c1Service->processCapturedPose($posePath, (string) $vars['sessionId'], (int) $poseIdx);
+            }
+            if (is_file($rawUngradedTmp)) {
+                $rawSaveName = 'raw_pose_' . ($poseIdx + 1) . '_' . $vars['fileName'];
+                $rawSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $rawSaveName;
+                if (@copy($rawUngradedTmp, $rawSaveDest)) {
+                    $vars['savedRawUngradedPoses'][] = $rawSaveName;
+                }
+            }
+
             $poseSaveName = 'orig_pose_' . ($poseIdx + 1) . '_' . $vars['fileName'];
             $poseSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $poseSaveName;
             if (is_string($posePath) && file_exists($posePath)) {
@@ -257,9 +288,11 @@ try {
             'limit' => $config['collage']['limit'] ?? 1,
             'preset' => $vars['preset'] ?? 'original',
             'preset_amount' => $vars['preset_amount'] ?? 100,
+            'base_grade' => $vars['baseGrade'] ?? null,
             'final_photo' => $vars['fileName'],
             'gif_photo' => $vars['gifFileName'],
             'original_photos' => $vars['savedOriginalPoses'],
+            'raw_ungraded_photos' => $vars['savedRawUngradedPoses'],
             'timelapse_photos' => $vars['savedTimelapseFrames'],
             'timelapse_by_pose' => $vars['savedTimelapseByPose'],
             'created_at' => time()
@@ -273,6 +306,21 @@ try {
         if (!file_exists($vars['tmpFile']) && file_exists($origSingleFinal)) {
             @copy($origSingleFinal, $vars['tmpFile']);
         }
+
+        // Preserve raw ungraded single pose if Capture One processed it at capture.php
+        $vars['savedRawUngradedPoses'] = [];
+        $rawUngradedSingleTmp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('raw_ungraded_%s_p00.jpg', $vars['sessionId']);
+        if ($c1Service->isEnabled() && empty($_POST['skip_capture_one']) && file_exists($vars['tmpFile']) && !is_file($rawUngradedSingleTmp)) {
+            $c1Service->processCapturedPose($vars['tmpFile'], (string) $vars['sessionId'], 0);
+        }
+        if (is_file($rawUngradedSingleTmp)) {
+            $rawSingleSaveName = 'raw_pose_1_' . $vars['fileName'];
+            $rawSingleSaveDest = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $rawSingleSaveName;
+            if (@copy($rawUngradedSingleTmp, $rawSingleSaveDest)) {
+                $vars['savedRawUngradedPoses'][] = $rawSingleSaveName;
+            }
+        }
+
         @copy($vars['tmpFile'], $origSingleTemp);
         @copy($vars['tmpFile'], $origSingleFinal);
         $vars['savedOriginalPoses'][] = 'orig_' . $vars['fileName'];
@@ -313,9 +361,11 @@ try {
             'limit' => 1,
             'preset' => $vars['preset'] ?? 'original',
             'preset_amount' => $vars['preset_amount'] ?? 100,
+            'base_grade' => $vars['baseGrade'] ?? null,
             'final_photo' => $vars['fileName'],
             'gif_photo' => $vars['gifFileName'],
             'original_photos' => $vars['savedOriginalPoses'],
+            'raw_ungraded_photos' => $vars['savedRawUngradedPoses'],
             'timelapse_photos' => $vars['savedTimelapseFrames'],
             'timelapse_by_pose' => $vars['savedTimelapseByPose'],
             'created_at' => time()
@@ -348,8 +398,14 @@ try {
         $vars['tmpFile'] = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
         $vars['thumbFile'] = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
 
-        // Lightroom Bridge Workflow
-        if (($config['lightroom']['enabled'] ?? false) && empty($_POST['skip_lightroom'])) {
+        // Capture One External Provider (single photo fallback if not already processed at capture.php)
+        $rawSingleTmp = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('raw_ungraded_%s_p00.jpg', $vars['sessionId']);
+        if ($c1Service->isEnabled() && empty($_POST['skip_capture_one']) && !$vars['isCollage'] && !is_file($rawSingleTmp) && file_exists($vars['tmpFile'])) {
+            $c1Service->processCapturedPose($vars['tmpFile'], (string) $vars['sessionId'], 0);
+        }
+
+        // Legacy Lightroom Bridge Workflow (kept for backward compatibility when Capture One is disabled)
+        if (!$c1Service->isEnabled() && ($config['lightroom']['enabled'] ?? false) && empty($_POST['skip_lightroom'])) {
             $lrImportFile = FolderEnum::LR_IMPORT->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
             $lrExportFile = FolderEnum::LR_EXPORT->absolute() . DIRECTORY_SEPARATOR . $vars['singleImageFile'];
             

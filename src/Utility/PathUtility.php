@@ -24,6 +24,13 @@ class PathUtility
     public static $rootPathCache = null;
 
     /**
+     * Cached base URL keyed by DOCUMENT_ROOT.
+     *
+     * @var array<string, string>
+     */
+    private static array $baseUrlCache = [];
+
+    /**
      * Returns the absolute filesystem path to the project root directory.
      *
      * The result is cached for subsequent calls and always includes a trailing
@@ -152,10 +159,14 @@ class PathUtility
      */
     public static function getBaseUrl(): string
     {
-        $documentRoot = (string)realpath($_SERVER['DOCUMENT_ROOT']);
-        $rootPath = self::getRootPath();
+        $docRootRaw = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+        if (!isset(self::$baseUrlCache[$docRootRaw])) {
+            $documentRoot = (string) realpath($docRootRaw);
+            $rootPath = self::getRootPath();
+            self::$baseUrlCache[$docRootRaw] = self::fixFilePath(str_replace($documentRoot, '', $rootPath) . '/');
+        }
 
-        return self::fixFilePath(str_replace($documentRoot, '', $rootPath) . '/');
+        return self::$baseUrlCache[$docRootRaw];
     }
 
     /**

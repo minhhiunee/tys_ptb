@@ -9,32 +9,49 @@ use Symfony\Component\Asset\VersionStrategy\VersionStrategyInterface;
 class AutoVersionStrategy implements VersionStrategyInterface
 {
     private DateTime $requestTime;
-    private array $revisionData = [];
+    private ?array $revisionData = null;
     private ?string $packageLockHash = null;
+    private bool $packageLockLoaded = false;
 
     public function __construct()
     {
         $this->requestTime = new DateTime();
+    }
 
-        // revisions file is generated through the gulp
-        // build process and stores hash values of all
-        // files within the resoures folder
+    private function getRevisionData(): array
+    {
+        if ($this->revisionData !== null) {
+            return $this->revisionData;
+        }
+
+        $this->revisionData = [];
         $manifestPath = PathUtility::getAbsolutePath('resources/revisions.json');
         if (is_file($manifestPath)) {
             try {
                 $this->revisionData = json_decode((string) file_get_contents($manifestPath), true, flags: \JSON_THROW_ON_ERROR);
             } catch (\JsonException $e) {
-                // if no revisions file exists we do not want
-                // the application to fail, in getVersion it
-                // will simply fall back to unversioned files
+                // fall back to unversioned files
             }
         }
 
-        // package-lock.json hash
+        return $this->revisionData;
+    }
+
+    private function getPackageLockHash(): ?string
+    {
+        if ($this->packageLockLoaded) {
+            return $this->packageLockHash;
+        }
+
+        $this->packageLockLoaded = true;
         $packageLockPath = PathUtility::getAbsolutePath('package-lock.json');
         if (is_file($packageLockPath)) {
-            $this->packageLockHash = sha1((string) file_get_contents($packageLockPath));
+            $mtime = @filemtime($packageLockPath);
+            $size = @filesize($packageLockPath);
+            $this->packageLockHash = sha1($mtime . ':' . $size);
         }
+
+        return $this->packageLockHash;
     }
 
     public function getVersion(string $path): string
@@ -46,16 +63,20 @@ class AutoVersionStrategy implements VersionStrategyInterface
 
         // node modules should only be updated when
         // the locked packages are changed
-        if (str_starts_with($path, 'node_modules') && $this->packageLockHash !== null) {
-            return $this->packageLockHash;
+        if (str_starts_with($path, 'node_modules')) {
+            return $this->getPackageLockHash() ?? '';
         }
 
         // always check private files for changed
         // content to avoid caching issues
         if (str_starts_with($path, 'private')) {
             $absolutePath = PathUtility::getAbsolutePath($path);
-            if (file_exists($absolutePath)) {
-                return sha1((string) file_get_contents($absolutePath));
+            if (is_file($absolutePath)) {
+                $mtime = @filemtime($absolutePath);
+                $size = @filesize($absolutePath);
+                if ($mtime !== false) {
+                    return $mtime . '-' . ($size ?: 0);
+                }
             }
         }
 
@@ -71,8 +92,9 @@ class AutoVersionStrategy implements VersionStrategyInterface
         // revision data contains a hash of the
         // current file contents, this one is
         // applied when a hash exists.
-        if ($this->revisionData[$path] ?? null) {
-            return $this->revisionData[$path];
+        $revisions = $this->getRevisionData();
+        if ($revisions[$path] ?? null) {
+            return $revisions[$path];
         }
 
         // all other resources are considered not

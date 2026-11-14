@@ -108,6 +108,8 @@ class PhotoboothConfiguration implements ConfigurationInterface
                 ->append(RembgConfiguration::getNode())
                 ->append(ThemeConfiguration::getNode())
                 ->append(\Photobooth\Configuration\Section\LightroomConfiguration::getNode())
+                ->append(\Photobooth\Configuration\Section\CaptureOneConfiguration::getNode())
+                ->append(\Photobooth\Configuration\Section\ColorWorkflowConfiguration::getNode())
                 ->append(\Photobooth\Configuration\Section\CameraConfiguration::getNode())
                 ->append(\Photobooth\Configuration\Section\SyncConfiguration::getNode())
             ->end();

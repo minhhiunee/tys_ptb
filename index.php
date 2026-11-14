@@ -10,17 +10,15 @@ use Photobooth\Utility\PathUtility;
 $assetService = AssetService::getInstance();
 $noCacheFlag = !empty($_GET['refresh']);
 
-if (!isset($_SESSION['asset_extra_version'])) {
-    $_SESSION['asset_extra_version'] = '';
+if (isset($_SESSION['asset_extra_version'])) {
+    unset($_SESSION['asset_extra_version']);
 }
 
 if ($noCacheFlag) {
-    $_SESSION['asset_extra_version'] = (string) time();
+    $assetService->setExtraVersion((string) time());
     header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
     header('Pragma: no-cache');
 }
-
-$assetService->setExtraVersion($_SESSION['asset_extra_version'] ?: null);
 
 if (!$config['ui']['skip_welcome']) {
     if (!is_file(PathUtility::getAbsolutePath('welcome/.skip_welcome'))) {
@@ -103,7 +101,15 @@ if ($config['ui']['selfie_mode']) {
     <script src="<?=$assetService->getUrl('resources/js/presets-ui.js')?>"></script>
 
 <?php include PathUtility::getAbsolutePath('template/components/start.adminshortcut.php'); ?>
-<?php ProcessService::getInstance()->boot(); ?>
+<?php
+if (
+    ($config['remotebuzzer']['startserver'] && ($config['remotebuzzer']['usebuttons'] || $config['remotebuzzer']['userotary']))
+    || $config['synctodrive']['enabled']
+    || ($config['lightroom']['enabled'] ?? false)
+) {
+    ProcessService::getInstance()->boot();
+}
+?>
 
 <?php if ($noCacheFlag): ?>
 <script>

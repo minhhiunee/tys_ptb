@@ -210,13 +210,65 @@ function getLayoutPreviewSvg(string $layoutId, string $orientation = 'landscape'
 function renderCollageOptionsFromConfig(array $collageConfig): string
 {
     $languageService = LanguageService::getInstance();
+    $logoUrl = htmlspecialchars(PathUtility::getPublicPath('resources/img/event/logo-96.png'), ENT_QUOTES);
+    $chaoUrl = htmlspecialchars(PathUtility::getPublicPath('resources/img/event/chao-tsv-2026-light-sm.png'), ENT_QUOTES);
+    $titleUrl = htmlspecialchars(PathUtility::getPublicPath('resources/img/event/tram-tinh-ha-sm.png'), ENT_QUOTES);
 
     $html = '<div id="collageSelector">';
+    $html .= '<style>
+        #collageSelectorModal .modal-inner,
+        #collageSelector .modal-inner {
+            --modal-background: #0B0726;
+            --modal-color: #F8FAFF;
+            background: linear-gradient(160deg, #120B34 0%, #08041D 100%) !important;
+            border: 1.5px solid rgba(167, 139, 250, 0.38) !important;
+            border-radius: 24px !important;
+            box-shadow: 0 28px 64px rgba(2, 1, 16, 0.9), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+            backdrop-filter: blur(20px) !important;
+            color: #F8FAFF !important;
+            overflow: hidden !important;
+        }
+        #collageSelectorModal .modal-body,
+        #collageSelector .modal-body {
+            background: transparent !important;
+            color: #F8FAFF !important;
+        }
+        #collageSelectorModal .collage-modal-brand img,
+        #collageSelector .collage-modal-brand img {
+            margin: 0 !important;
+        }
+        #collageSelectorModal .modal-buttonbar,
+        #collageSelector .modal-buttonbar {
+            background: rgba(8, 4, 26, 0.92) !important;
+            border-top: 1px solid rgba(167, 139, 250, 0.2) !important;
+        }
+        .collageSelector__option {
+            background: rgba(24, 15, 68, 0.78) !important;
+            border: 1.5px solid rgba(167, 139, 250, 0.28) !important;
+            color: #F8FAFF !important;
+        }
+        .collageSelector__option:hover {
+            background: rgba(45, 27, 114, 0.92) !important;
+            border-color: #38BDF8 !important;
+            transform: translateY(-3px);
+            box-shadow: 0 12px 28px rgba(56, 189, 248, 0.25) !important;
+        }
+        .frame-card-preview {
+            background: rgba(10, 6, 32, 0.88) !important;
+            border-color: rgba(167, 139, 250, 0.25) !important;
+        }
+    </style>';
     $html .= '<div class="modal hidden" id="collageSelectorModal" aria-hidden="true" role="dialog" aria-labelledby="collageSelectorTitle">';
-    $html .= '<div class="modal-inner" style="max-width: 960px; width: 92%;">';
-    $html .= '<div class="modal-body" style="padding: 24px 20px 10px;">';
-    $html .= '<h2 id="collageSelectorTitle" style="text-align:center; font-size:22px; font-weight:800; color:#0f172a; margin:0 0 6px; letter-spacing:-0.02em;">Chọn Khung Ảnh / Choose Frame</h2>';
-    $html .= '<p style="text-align:center; font-size:13px; color:#64748b; margin:0 0 20px;">Mỗi khung ảnh tương ứng số kiểu chụp và bố cục khác nhau</p>';
+    $html .= '<div class="modal-inner" style="max-width: 960px; width: 92%; background: linear-gradient(160deg, #120B34 0%, #08041D 100%); border: 1.5px solid rgba(167, 139, 250, 0.38); border-radius: 24px; box-shadow: 0 28px 64px rgba(2, 1, 16, 0.9); color: #F8FAFF; overflow: hidden;">';
+    $html .= '<div class="modal-body" style="padding: 22px 20px 14px; background: transparent; color: #F8FAFF;">';
+    $html .= '<div class="collage-modal-brand" style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px;">';
+    $html .= '<img src="' . $logoUrl . '" alt="Logo" style="width:38px; height:38px; max-height:38px; max-width:38px; margin:0; border-radius:50%; background:#fff; padding:2px; object-fit:contain; flex-shrink:0;" />';
+    $html .= '<div style="display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:2px;">';
+    $html .= '<img src="' . $chaoUrl . '" alt="CHÀO TÂN SINH VIÊN 2026" style="height:11px; max-height:11px; width:auto; max-width:190px; margin:0; object-fit:contain;" />';
+    $html .= '<img src="' . $titleUrl . '" alt="TRẠM TINH HÀ" style="height:19px; max-height:19px; width:auto; max-width:210px; margin:0; object-fit:contain; filter:drop-shadow(0 0 8px rgba(56,189,248,0.5));" />';
+    $html .= '</div></div>';
+    $html .= '<h2 id="collageSelectorTitle" style="text-align:center; font-size:22px; font-weight:800; color:#F8FAFF; margin:0 0 6px; letter-spacing:-0.02em;">Chọn Khung Ảnh • Trạm Tinh Hà</h2>';
+    $html .= '<p style="text-align:center; font-size:13px; color:#C4B5FD; margin:0 0 18px;">Mỗi khung ảnh tương ứng số kiểu chụp và bố cục khác nhau</p>';
     $html .= '<div class="collageSelector__options" style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; align-items:stretch;">';
 
     // Get orientation from config (landscape or portrait)
@@ -258,7 +310,7 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
         if (!empty($layoutData['frame'])) {
             $frameUrl = htmlspecialchars(PathUtility::getPublicPath($layoutData['frame']), ENT_QUOTES);
             $previewHtml = sprintf(
-                '<div class="frame-card-preview" style="position:relative; width:100%%; height:180px; display:flex; align-items:center; justify-content:center; background:#f1f5f9; border:1px solid #e2e8f0; border-radius:12px; padding:10px; overflow:hidden;">' .
+                '<div class="frame-card-preview" style="position:relative; width:100%%; height:180px; display:flex; align-items:center; justify-content:center; background:rgba(10, 6, 32, 0.88); border:1px solid rgba(167, 139, 250, 0.25); border-radius:12px; padding:10px; overflow:hidden;">' .
                 '<img src="%s" alt="%s" style="max-height:100%%; max-width:100%%; object-fit:contain; filter:drop-shadow(0 4px 10px rgba(0,0,0,0.15));" />' .
                 '<span class="frame-badge" style="position:absolute; top:8px; right:8px; background:linear-gradient(135deg, #0284c7, #2563eb); color:#ffffff; font-size:11px; font-weight:700; padding:3px 9px; border-radius:12px; box-shadow:0 2px 6px rgba(37,99,235,0.35);"><i class="fa fa-camera"></i> %d Ảnh</span>' .
                 '</div>',
@@ -271,11 +323,11 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
         }
 
         $html .= sprintf(
-            '<button type="button" class="collageSelector__option cursor-pointer" data-layout="%s" data-limit="%d" style="min-width:180px; max-width:215px; flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; background:#ffffff; border:2px solid #e2e8f0; border-radius:16px; padding:12px; box-shadow:0 4px 12px rgba(0,0,0,0.06); transition:all 0.2s cubic-bezier(0.16,1,0.3,1); cursor:pointer;">' .
+            '<button type="button" class="collageSelector__option cursor-pointer" data-layout="%s" data-limit="%d" style="min-width:180px; max-width:215px; flex:1; display:flex; flex-direction:column; align-items:center; gap:8px; background:rgba(24,15,68,0.72); border:1.5px solid rgba(167,139,250,0.28); border-radius:16px; padding:12px; box-shadow:0 8px 20px rgba(0,0,0,0.35); transition:all 0.2s cubic-bezier(0.16,1,0.3,1); cursor:pointer;">' .
             '%s' .
             '<div style="width:100%%; text-align:center;">' .
-            '<div class="collageSelector__label" style="font-weight:700; font-size:13px; color:#0f172a; line-height:1.3; margin-bottom:2px;">%s</div>' .
-            '<div style="font-size:11px; color:#64748b; font-weight:500;">%s</div>' .
+            '<div class="collageSelector__label" style="font-weight:700; font-size:13px; color:#F8FAFF; line-height:1.3; margin-bottom:2px;">%s</div>' .
+            '<div style="font-size:11px; color:#A5B4FC; font-weight:500;">%s</div>' .
             '</div>' .
             '</button>',
             htmlspecialchars($layoutId, ENT_QUOTES),
@@ -288,8 +340,8 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
 
     $html .= '</div>'; // .collageSelector__options
     $html .= '</div>'; // .modal-body
-    $html .= '<div class="modal-buttonbar" style="padding:12px 20px 20px; display:flex; justify-content:center;">';
-    $html .= '<button type="button" class="modal-button" id="collageSelectorClose" data-modal-close style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; font-weight:600; padding:8px 24px; border-radius:10px; cursor:pointer;">';
+    $html .= '<div class="modal-buttonbar" style="padding:12px 20px 20px; display:flex; justify-content:center; background: rgba(8, 4, 26, 0.92); border-top: 1px solid rgba(167, 139, 250, 0.2);">';
+    $html .= '<button type="button" class="modal-button" id="collageSelectorClose" data-modal-close style="background:rgba(167,139,250,0.16); color:#F8FAFF; border:1px solid rgba(167,139,250,0.4); font-weight:600; padding:10px 28px; border-radius:999px; cursor:pointer;">';
     $html .= '<span class="modal-button--icon" style="margin-right:6px;"><i class="fa fa-times"></i></span>';
     $html .= '<span class="modal-button--label">' . $languageService->translate('close') . '</span>';
     $html .= '</button>';

@@ -90,10 +90,11 @@ class StorageMaintenanceService
                         elseif (str_starts_with($entry, 'cache_frame_')) {
                             $shouldDelete = ($age > 86400);
                         }
-                        // 3. Time-lapse temp frames, orig_ backups in tmp, meta_ in tmp expire after 1 hour
+                        // 3. Time-lapse temp frames, orig_ backups in tmp, raw_ungraded_ backups, meta_ in tmp expire after 1 hour
                         elseif (
                             str_starts_with($entry, 'tl_') ||
                             str_starts_with($entry, 'orig_') ||
+                            str_starts_with($entry, 'raw_ungraded_') ||
                             str_starts_with($entry, 'meta_') ||
                             preg_match('/-\d+\.jpg$/i', $entry) ||
                             str_ends_with(strtolower($entry), '.jpg')

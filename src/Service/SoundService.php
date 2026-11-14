@@ -3,6 +3,7 @@
 namespace Photobooth\Service;
 
 use Photobooth\Utility\PathUtility;
+use Photobooth\Utility\RuntimeCacheUtility;
 use Symfony\Component\Finder\Finder;
 
 class SoundService
@@ -32,6 +33,17 @@ class SoundService
         $this->voice = $config['sound']['voice'] ?? 'man';
         $this->fallback =  $config['sound']['fallback_enabled'] ?? true;
 
+        $customDir = PathUtility::getAbsolutePath('private/sounds/');
+        $customMtime = ($this->voice === 'custom' && is_dir($customDir)) ? (int) @filemtime($customDir) : 0;
+        $fingerprint = $this->locale . '|' . $this->voice . '|' . ($this->fallback ? '1' : '0') . '|' . $customMtime . '|' . (int) @filemtime(__FILE__);
+        $cacheKey = 'sounds_' . md5($this->locale . '|' . $this->voice . '|' . ($this->fallback ? '1' : '0') . '|' . __DIR__);
+
+        $cached = RuntimeCacheUtility::get($cacheKey, $fingerprint, 'json');
+        if (is_array($cached) && count($cached) === count($this->files)) {
+            $this->files = $cached;
+            return;
+        }
+
         $this->files['counter-1'] = $this->findSoundFile('counter-1');
         $this->files['counter-2'] = $this->findSoundFile('counter-2');
         $this->files['counter-3'] = $this->findSoundFile('counter-3');
@@ -43,6 +55,8 @@ class SoundService
         $this->files['counter-9'] = $this->findSoundFile('counter-9');
         $this->files['counter-10'] = $this->findSoundFile('counter-10');
         $this->files['cheese'] = $this->findSoundFile('cheese');
+
+        RuntimeCacheUtility::set($cacheKey, $fingerprint, $this->files, 'json');
     }
 
     public function all(bool $absolute = false): array

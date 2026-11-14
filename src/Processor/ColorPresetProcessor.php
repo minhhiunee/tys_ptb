@@ -12,6 +12,8 @@ class ColorPresetProcessor
     protected LoggerInterface $logger;
     /** @var array<string, \Imagick> Static in-memory cache of loaded HaldCLUT PNGs per request */
     protected static array $lutImagickCache = [];
+    /** @var array<string, \Imagick> Static in-memory cache of scaled frame overlays per request */
+    protected static array $frameImagickCache = [];
 
     public function __construct()
     {
@@ -27,6 +29,8 @@ class ColorPresetProcessor
      * @param string|null $lutPath Optional path to a HaldCLUT image
      * @param array $xmpParams Parsed parameters from XMP file
      * @param int $amount Intensity percentage (0 to 100)
+     * @param string|null $frameOverlayPath Optional transparent frame PNG overlaid in the same pass
+     * @param int $jpegQuality Output JPEG quality (1-100)
      * @return bool True on success, false on failure
      */
     public function applyPreset(
@@ -34,7 +38,9 @@ class ColorPresetProcessor
         string $targetImagePath,
         ?string $lutPath = null,
         array $xmpParams = [],
-        int $amount = 100
+        int $amount = 100,
+        ?string $frameOverlayPath = null,
+        int $jpegQuality = 95
     ): bool {
         $amount = max(0, min(100, $amount));
 
@@ -55,10 +61,49 @@ class ColorPresetProcessor
         }
 
         if (extension_loaded('imagick')) {
-            return $this->applyWithImagick($sourceImagePath, $targetImagePath, $lutPath, $xmpParams, $amount);
+            return $this->applyWithImagick($sourceImagePath, $targetImagePath, $lutPath, $xmpParams, $amount, $frameOverlayPath, $jpegQuality);
         }
 
-        return $this->applyWithGd($sourceImagePath, $targetImagePath, $lutPath, $xmpParams, $amount);
+        return $this->applyWithGd($sourceImagePath, $targetImagePath, $lutPath, $xmpParams, $amount, $frameOverlayPath, $jpegQuality);
+    }
+
+    /**
+     * Load/cache a pre-scaled Imagick frame overlay matching target dimensions.
+     */
+    protected function getScaledFrameOverlayImagick(string $framePngPath, int $targetW, int $targetH): ?\Imagick
+    {
+        if (!is_file($framePngPath)) {
+            return null;
+        }
+
+        $mtime = (string) @filemtime($framePngPath);
+        $memKey = $framePngPath . '|' . $mtime . '|' . $targetW . 'x' . $targetH;
+        if (isset(self::$frameImagickCache[$memKey])) {
+            return self::$frameImagickCache[$memKey];
+        }
+
+        $tmpDir = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'tmp';
+        $cachedScaledPath = $tmpDir . DIRECTORY_SEPARATOR . sprintf('cache_frame_%s_%dx%d.png', md5($framePngPath . '_' . $mtime), $targetW, $targetH);
+
+        try {
+            if (is_file($cachedScaledPath)) {
+                $overlay = new \Imagick($cachedScaledPath);
+                self::$frameImagickCache[$memKey] = $overlay;
+                return $overlay;
+            }
+
+            $overlay = new \Imagick($framePngPath);
+            if ($overlay->getImageWidth() !== $targetW || $overlay->getImageHeight() !== $targetH) {
+                $overlay->resizeImage($targetW, $targetH, \Imagick::FILTER_LANCZOS, 1, false);
+                if (is_dir($tmpDir)) {
+                    @$overlay->writeImage($cachedScaledPath);
+                }
+            }
+            self::$frameImagickCache[$memKey] = $overlay;
+            return $overlay;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
@@ -69,7 +114,9 @@ class ColorPresetProcessor
         string $targetImagePath,
         ?string $lutPath,
         array $xmpParams,
-        int $amount
+        int $amount,
+        ?string $frameOverlayPath = null,
+        int $jpegQuality = 95
     ): bool {
         try {
             $original = new \Imagick($sourceImagePath);
@@ -89,21 +136,31 @@ class ColorPresetProcessor
             }
 
             if ($amount >= 100) {
-                $result = $processed->writeImage($targetImagePath);
-                $processed->clear();
-                $processed->destroy();
-                $original->clear();
-                $original->destroy();
-                return $result;
+                $finalImg = $processed;
+            } else {
+                // Blend processed image over original with linear opacity
+                $opacity = $amount / 100.0;
+                $processed->setImageAlphaChannel(\Imagick::ALPHACHANNEL_SET);
+                $processed->evaluateImage(\Imagick::EVALUATE_MULTIPLY, $opacity, \Imagick::CHANNEL_ALPHA);
+
+                $original->compositeImage($processed, \Imagick::COMPOSITE_OVER, 0, 0);
+                $finalImg = $original;
             }
 
-            // Blend processed image over original with linear opacity
-            $opacity = $amount / 100.0;
-            $processed->setImageAlphaChannel(\Imagick::ALPHACHANNEL_SET);
-            $processed->evaluateImage(\Imagick::EVALUATE_MULTIPLY, $opacity, \Imagick::CHANNEL_ALPHA);
+            // Composite pristine frame overlay in-memory before single JPEG write
+            if (!empty($frameOverlayPath) && is_file($frameOverlayPath)) {
+                $overlay = $this->getScaledFrameOverlayImagick(
+                    $frameOverlayPath,
+                    $finalImg->getImageWidth(),
+                    $finalImg->getImageHeight()
+                );
+                if ($overlay instanceof \Imagick) {
+                    $finalImg->compositeImage($overlay, \Imagick::COMPOSITE_OVER, 0, 0);
+                }
+            }
 
-            $original->compositeImage($processed, \Imagick::COMPOSITE_OVER, 0, 0);
-            $result = $original->writeImage($targetImagePath);
+            $finalImg->setImageCompressionQuality(max(60, min(100, $jpegQuality)));
+            $result = $finalImg->writeImage($targetImagePath);
 
             $processed->clear();
             $processed->destroy();
@@ -167,7 +224,9 @@ class ColorPresetProcessor
         string $targetImagePath,
         ?string $lutPath,
         array $xmpParams,
-        int $amount
+        int $amount,
+        ?string $frameOverlayPath = null,
+        int $jpegQuality = 95
     ): bool {
         try {
             $src = imagecreatefromjpeg($sourceImagePath);
@@ -204,7 +263,16 @@ class ColorPresetProcessor
                 $final = $processed;
             }
 
-            $result = imagejpeg($final, $targetImagePath, 95);
+            if (!empty($frameOverlayPath) && is_file($frameOverlayPath)) {
+                $rawFrame = @imagecreatefrompng($frameOverlayPath);
+                if ($rawFrame instanceof \GdImage) {
+                    imagealphablending($final, true);
+                    imagecopyresampled($final, $rawFrame, 0, 0, 0, 0, $w, $h, imagesx($rawFrame), imagesy($rawFrame));
+                    imagedestroy($rawFrame);
+                }
+            }
+
+            $result = imagejpeg($final, $targetImagePath, max(60, min(100, $jpegQuality)));
             imagedestroy($src);
             imagedestroy($processed);
 

@@ -8,6 +8,7 @@ use Photobooth\Environment;
 use Photobooth\Helper;
 use Photobooth\Utility\ArrayUtility;
 use Photobooth\Utility\PathUtility;
+use Photobooth\Utility\RuntimeCacheUtility;
 use Symfony\Component\Config\Definition\Processor;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\Config\Loader\LoaderResolver;
@@ -15,7 +16,7 @@ use Symfony\Component\Config\Loader\DelegatingLoader;
 
 class ConfigurationService
 {
-    protected array $defaultConfiguration;
+    protected ?array $defaultConfiguration = null;
     protected array $configuration;
     protected array $processedConfiguration;
 
@@ -24,35 +25,59 @@ class ConfigurationService
         $this->load();
     }
 
+    protected function getCacheKey(): string
+    {
+        return 'config_' . md5(__DIR__);
+    }
+
+    public function clearConfigCache(): void
+    {
+        RuntimeCacheUtility::delete($this->getCacheKey(), 'ser');
+    }
+
     public function load(): void
     {
+        $userConfigFile = PathUtility::getAbsolutePath('config/my.config.inc.php');
+        $userMtime = is_file($userConfigFile) ? (int) @filemtime($userConfigFile) : 0;
+        $userSize = is_file($userConfigFile) ? (int) @filesize($userConfigFile) : 0;
+        $schemaFile = PathUtility::getAbsolutePath('src/Configuration/PhotoboothConfiguration.php');
+        $schemaMtime = is_file($schemaFile) ? (int) @filemtime($schemaFile) : 0;
+        $fingerprint = $userMtime . ':' . $userSize . ':' . (int) @filemtime(__FILE__) . ':' . $schemaMtime;
+        $cacheKey = $this->getCacheKey();
+
+        $cachedConfig = RuntimeCacheUtility::get($cacheKey, $fingerprint, 'ser');
+        if (is_array($cachedConfig)) {
+            $this->configuration = $cachedConfig;
+            return;
+        }
+
         $fileLocator = new FileLocator(PathUtility::getAbsolutePath('config'));
         $loaderResolver = new LoaderResolver([
             new PhpArrayLoader($fileLocator),
         ]);
         $loader = new DelegatingLoader($loaderResolver);
 
-        // default configuration
-        $this->defaultConfiguration = (new Processor())->processConfiguration(new PhotoboothConfiguration(), [[]]);
-
         // configuration
         $userConfiguration = [];
-        if (file_exists(PathUtility::getAbsolutePath('config/my.config.inc.php'))) {
+        if (is_file($userConfigFile)) {
             $userConfiguration = $loader->load('my.config.inc.php', 'php_array');
             $userConfiguration = $this->processMigration($userConfiguration);
         }
         $configuration = (new Processor())->processConfiguration(new PhotoboothConfiguration(), [$userConfiguration]);
         $configuration = $this->addDefaults($configuration);
         $this->configuration = $configuration;
+
+        RuntimeCacheUtility::set($cacheKey, $fingerprint, $this->configuration, 'ser');
     }
 
     public function update(array $data): void
     {
         $data = (new Processor())->processConfiguration(new PhotoboothConfiguration(), [$data]);
-        $content = "<?php\n\nreturn " . ArrayUtility::export(ArrayUtility::diffRecursive($data, $this->defaultConfiguration)) . ";\n";
+        $content = "<?php\n\nreturn " . ArrayUtility::export(ArrayUtility::diffRecursive($data, $this->getDefaultConfiguration())) . ";\n";
         $userConfigurationFile = PathUtility::getAbsolutePath('config/my.config.inc.php');
         if (file_put_contents($userConfigurationFile, $content)) {
             Helper::clearCache($userConfigurationFile);
+            $this->clearConfigCache();
             return;
         }
 
@@ -323,6 +348,10 @@ class ConfigurationService
 
     public function getDefaultConfiguration(): array
     {
+        if ($this->defaultConfiguration === null) {
+            $this->defaultConfiguration = (new Processor())->processConfiguration(new PhotoboothConfiguration(), [[]]);
+        }
+
         return $this->defaultConfiguration;
     }
 

@@ -22,6 +22,12 @@ function handleDebugPanel(string $content, array $config): string|false
             return readFileContents(PathUtility::getAbsolutePath('var/log/remotestorage.log'));
         case 'nav-rembglog':
             return readFileContents(PathUtility::getAbsolutePath('var/log/rembg.log'));
+        case 'nav-captureonelog':
+            $c1Diag = \Photobooth\Service\CaptureOneIntegrationService::getInstance()->getDiagnostics();
+            $logText = readFileContents(PathUtility::getAbsolutePath('var/log/capture-one.log'));
+            return "=== CAPTURE ONE DIAGNOSTICS ===\n"
+                . json_encode($c1Diag, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+                . "\n\n=== CAPTURE ONE LOG ===\n" . $logText;
         case 'nav-myconfig':
             return json_encode(maskedConfig($config), JSON_PRETTY_PRINT);
         case 'nav-serverprocesses':

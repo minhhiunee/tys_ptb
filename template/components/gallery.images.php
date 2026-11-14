@@ -11,6 +11,11 @@ $metadataCache = ImageMetadataCacheService::getInstance();
 if (empty($imagelist)) {
     echo '<h1>' . $languageService->translate('gallery_no_image') . '</h1>';
 } else {
+    $imagesDir = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR;
+    $thumbsDir = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR;
+    $imagesPublic = rtrim(FolderEnum::IMAGES->public(), '/') . '/';
+    $thumbsPublic = rtrim(FolderEnum::THUMBS->public(), '/') . '/';
+
     echo '<div class="gallery-list" id="galimages">';
     foreach ($imagelist as $image) {
         try {
@@ -28,8 +33,19 @@ if (empty($imagelist)) {
                 }
             }
 
-            $filename_photo = PathUtility::getAbsolutePath(FolderEnum::IMAGES->value . DIRECTORY_SEPARATOR . $image);
-            $filename_thumb = PathUtility::getAbsolutePath(FolderEnum::THUMBS->value . DIRECTORY_SEPARATOR . $image);
+            $relativeImage = ltrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $image), DIRECTORY_SEPARATOR);
+            if (str_contains($relativeImage, '..')) {
+                $filename_photo = PathUtility::getAbsolutePath(FolderEnum::IMAGES->value . DIRECTORY_SEPARATOR . $image);
+                $filename_thumb = PathUtility::getAbsolutePath(FolderEnum::THUMBS->value . DIRECTORY_SEPARATOR . $image);
+                $photoPublicUrl = PathUtility::getPublicPath($filename_photo);
+                $thumbPublicFallback = PathUtility::getPublicPath($filename_thumb);
+            } else {
+                $filename_photo = $imagesDir . $relativeImage;
+                $filename_thumb = $thumbsDir . $relativeImage;
+                $publicRel = str_replace(DIRECTORY_SEPARATOR, '/', $relativeImage);
+                $photoPublicUrl = $imagesPublic . $publicRel;
+                $thumbPublicFallback = $thumbsPublic . $publicRel;
+            }
             $useThumbs = $config['gallery']['use_thumb'];
 
             $imageinfo = $metadataCache->get($filename_photo);
@@ -60,9 +76,9 @@ if (empty($imagelist)) {
             }
 
             if (is_array($imageinfo)) {
-                $thumbPath = $filename_thumb;
+                $thumbPublicUrl = $thumbPublicFallback;
                 if (!$useThumbs || !is_array($imageinfoThumb)) {
-                    $thumbPath = $filename_photo;
+                    $thumbPublicUrl = $photoPublicUrl;
                     $imageinfoThumb = $imageinfo;
                 }
                 // Calculate PSWP dimensions to max 800x600 while keeping aspect ratio
@@ -83,11 +99,11 @@ if (empty($imagelist)) {
                     $pswpWidth  = $imageinfo['width'];
                     $pswpHeight = $imageinfo['height'];
                 }
-                echo '<a href="' . PathUtility::getPublicPath($filename_photo) . '" class="gallery-list-item rotaryfocus" data-size="' . $imageinfo['width'] . 'x' . $imageinfo['height'] . '"';
+                echo '<a href="' . $photoPublicUrl . '" class="gallery-list-item rotaryfocus" data-size="' . $imageinfo['width'] . 'x' . $imageinfo['height'] . '"';
                 echo ' data-pswp-width="' . $pswpWidth . '" data-pswp-height="' . $pswpHeight . '"';
-                echo ' data-med="' . PathUtility::getPublicPath($thumbPath) . '" data-med-size="' . $imageinfoThumb['width'] . 'x' . $imageinfoThumb['height'] . '">';
+                echo ' data-med="' . $thumbPublicUrl . '" data-med-size="' . $imageinfoThumb['width'] . 'x' . $imageinfoThumb['height'] . '">';
                 echo '<figure>';
-                echo '<img src="' . PathUtility::getPublicPath($thumbPath) . '" alt="' . $image . '" loading="lazy"';
+                echo '<img src="' . $thumbPublicUrl . '" alt="' . $image . '" loading="lazy" decoding="async"';
                 if ($imageinfo['height'] > $imageinfo['width']) {
                     echo 'style="padding-left: 25%;padding-right: 25%;"';
                 }

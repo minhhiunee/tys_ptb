@@ -16,6 +16,13 @@
     let isViewingGif = false;
     let hasAppliedPresetInSession = false;
     let previewReqSeq = 0;
+    let activePreviewXhr = null;
+    let prewarmXhr = null;
+    let activeBakePromise = null;
+    let activeBakeKey = '';
+    let bakedStaticKey = '';
+    let bakedGifKey = '';
+    let qrOpenSeq = 0;
 
     const $presetBar = $('#desktop-preset-bar');
     const $resultPage = $('.stage[data-stage="result"]');
@@ -51,12 +58,31 @@
         return fn || '';
     }
 
+    function abortInFlightPrewarm() {
+        if (prewarmXhr && prewarmXhr.readyState !== 4) {
+            prewarmXhr.abort();
+        }
+        prewarmXhr = null;
+    }
+
     function initPresetBarForImage() {
+        clearTimeout(debounceTimer);
+        clearTimeout(bakeTimer);
+        if (activePreviewXhr && activePreviewXhr.readyState !== 4) {
+            activePreviewXhr.abort();
+        }
+        activePreviewXhr = null;
+        abortInFlightPrewarm();
+
         currentFilename = extractFilename();
         currentPreset = 'original';
         currentAmount = 100;
         isViewingGif = false;
         hasAppliedPresetInSession = false;
+        activeBakePromise = null;
+        activeBakeKey = '';
+        bakedStaticKey = currentFilename ? (currentFilename + '|original|100') : '';
+        bakedGifKey = '';
         $('#result-gif-viewer').addClass('hidden').attr('aria-hidden', 'true');
         $('#result-gif-img').attr('src', '');
         $btnToggleGif.removeClass('active comparing').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
@@ -99,6 +125,11 @@
         const reqId = ++previewReqSeq;
         currentPreset = presetId;
         currentAmount = amount;
+        abortInFlightPrewarm();
+        if (activePreviewXhr && activePreviewXhr.readyState !== 4) {
+            activePreviewXhr.abort();
+        }
+        activePreviewXhr = null;
 
         if (presetId === 'original' || amount === 0) {
             $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
@@ -127,7 +158,7 @@
             ? environment.publicFolders.api + '/presets.php'
             : 'api/presets.php';
 
-        $.ajax({
+        activePreviewXhr = $.ajax({
             method: 'POST',
             url: apiEndpoint,
             data: postData,
@@ -149,7 +180,7 @@
             }
         })
         .fail(function (xhr, status, err) {
-            if (reqId !== previewReqSeq) {
+            if (status === 'abort' || reqId !== previewReqSeq) {
                 return;
             }
             console.error('Preset preview error:', err);
@@ -164,37 +195,8 @@
             if (!currentFilename) {
                 return;
             }
-            const postData = {
-                action: 'apply',
-                file: currentFilename,
-                preset: presetId,
-                amount: amount,
-                preview: 0
-            };
-            if (typeof csrf !== 'undefined' && csrf.key) {
-                postData[csrf.key] = csrf.token;
-            }
-            const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-                ? environment.publicFolders.api + '/presets.php'
-                : 'api/presets.php';
-            $.ajax({
-                method: 'POST',
-                url: apiEndpoint,
-                data: postData,
-                dataType: 'json'
-            }).done(function (data) {
-                if (data && data.success) {
-                    if (presetId === 'original') {
-                        hasAppliedPresetInSession = false;
-                    }
-                    if (isViewingGif && data.gif_url) {
-                        $('#result-gif-img').attr('src', data.gif_url);
-                    }
-                    setStatus(isViewingGif ? 'GIF Tua nhanh' : 'Ready', false);
-                    console.log('Preset permanently saved to image:', currentFilename, presetId, amount);
-                }
-            });
-        }, 350);
+            forceBakeNow(presetId, amount, null, { syncAfter: false });
+        }, 180);
     }
 
     // Helper to keep photobooth result screen alive while interacting
@@ -220,7 +222,8 @@
         e.stopPropagation();
         keepAlive();
         const val = parseInt($(this).val(), 10);
-        $('#preset-amount-val').text(val + '%');
+        currentAmount = isNaN(val) ? 100 : val;
+        $('#preset-amount-val').text(currentAmount + '%');
 
         // If user drags slider while still on 'original', auto-select first preset so slider adjustment is immediately visible
         if (currentPreset === 'original') {
@@ -231,10 +234,13 @@
                 currentPreset = $firstPreset.data('preset');
             }
         }
+        if (currentPreset !== 'original' && currentAmount > 0) {
+            hasAppliedPresetInSession = true;
+        }
 
         clearTimeout(debounceTimer);
         debounceTimer = setTimeout(function () {
-            applyPresetPreview(currentPreset, val);
+            applyPresetPreview(currentPreset, currentAmount);
         }, 80);
     });
 
@@ -297,6 +303,7 @@
         if (!filename) {
             return;
         }
+        abortInFlightPrewarm();
         const postData = {
             action: 'bake_gif',
             file: filename,
@@ -310,15 +317,20 @@
             ? environment.publicFolders.api + '/presets.php'
             : 'api/presets.php';
 
-        $.ajax({
+        // Pre-warm local GIF only; cloud sync waits until preset selection/delivery is finalized
+        prewarmXhr = $.ajax({
             method: 'POST',
             url: apiEndpoint,
             data: postData,
             dataType: 'json'
         }).done(function (res) {
+            prewarmXhr = null;
+            if (filename === currentFilename && currentPreset === 'original' && !hasAppliedPresetInSession) {
+                bakedGifKey = filename + '|original|100';
+            }
             console.log('GIF background pre-warm ready:', res);
-            // Automatically push Photo + GIF to Cloud R2 in background right after GIF prewarm finishes
-            triggerBackgroundCloudSync(filename);
+        }).fail(function () {
+            prewarmXhr = null;
         });
     }
 
@@ -497,24 +509,62 @@
         }
     });
 
-    function forceBakeNow(presetId, amount, callback) {
+    function forceBakeNow(presetId, amount, callback, options) {
+        clearTimeout(debounceTimer);
         clearTimeout(bakeTimer);
-        if (!currentFilename || !presetId || (presetId === 'original' && !hasAppliedPresetInSession)) {
-            if (currentFilename) {
-                triggerBackgroundCloudSync(currentFilename);
-            }
+        abortInFlightPrewarm();
+
+        const opts = options || {};
+        const syncAfter = opts.syncAfter !== false;
+        const resolvedPreset = (presetId && String(presetId)) || currentPreset || 'original';
+        const resolvedAmount = (typeof amount === 'number' && !isNaN(amount))
+            ? amount
+            : (parseInt($amountSlider.val(), 10) || currentAmount || 100);
+        const normalizedAmount = resolvedPreset === 'original' ? 100 : resolvedAmount;
+        const targetFile = currentFilename;
+        const stateKey = targetFile ? (targetFile + '|' + resolvedPreset + '|' + normalizedAmount) : '';
+        const needsBake = Boolean(targetFile) && (
+            bakedStaticKey !== stateKey ||
+            bakedGifKey !== stateKey ||
+            (resolvedPreset === 'original' && hasAppliedPresetInSession)
+        );
+
+        const doneCallback = function (res) {
             if (typeof callback === 'function') {
-                callback();
+                callback(res || null);
             }
-            return;
+        };
+
+        if (!targetFile || !needsBake) {
+            const deferred = $.Deferred();
+            if (targetFile && syncAfter) {
+                triggerBackgroundCloudSync(targetFile, function (syncRes) {
+                    doneCallback(syncRes);
+                    deferred.resolve(syncRes);
+                });
+            } else {
+                doneCallback(null);
+                deferred.resolve(null);
+            }
+            return deferred.promise();
         }
+
+        const reqKey = stateKey + '|bake';
+        if (activeBakePromise && activeBakeKey === reqKey) {
+            return activeBakePromise.then(function (res) {
+                doneCallback(res);
+                return res;
+            });
+        }
+
         setStatus('Saving...', true);
         const postData = {
             action: 'apply',
-            file: currentFilename,
-            preset: presetId,
-            amount: amount,
+            file: targetFile,
+            preset: resolvedPreset,
+            amount: normalizedAmount,
             bake_gif: 1,
+            include_qr: opts.includeQr ? 1 : 0,
             preview: 0
         };
         if (typeof csrf !== 'undefined' && csrf.key) {
@@ -523,46 +573,73 @@
         const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
             ? environment.publicFolders.api + '/presets.php'
             : 'api/presets.php';
+
+        const deferred = $.Deferred();
+        activeBakeKey = reqKey;
+        activeBakePromise = deferred.promise();
+
         $.ajax({
             method: 'POST',
             url: apiEndpoint,
             data: postData,
             dataType: 'json'
-        }).always(function () {
-            if (presetId === 'original') {
-                hasAppliedPresetInSession = false;
+        }).done(function (data) {
+            if (data && data.success) {
+                bakedStaticKey = stateKey;
+                bakedGifKey = stateKey;
+                if (targetFile === currentFilename) {
+                    if (resolvedPreset === 'original') {
+                        hasAppliedPresetInSession = false;
+                    }
+                    if (data.url && !isComparing) {
+                        currentProcessedUrl = data.url;
+                        if (!isViewingGif) {
+                            $resultPage.css('--stage-background-image', `url(${data.url})`);
+                        }
+                    }
+                    if (isViewingGif && data.gif_url) {
+                        $('#result-gif-img').attr('src', data.gif_url);
+                    }
+                }
             }
             setStatus('Ready', false);
-            triggerBackgroundCloudSync(currentFilename);
-            if (typeof callback === 'function') {
-                callback();
+            if (syncAfter) {
+                triggerBackgroundCloudSync(targetFile, function (syncRes) {
+                    doneCallback(syncRes);
+                    deferred.resolve(data || null);
+                });
+            } else {
+                doneCallback(data || null);
+                deferred.resolve(data || null);
+            }
+        }).fail(function (err) {
+            setStatus('Ready', false);
+            doneCallback(null);
+            deferred.resolve(null);
+            console.error('Preset bake failed:', err);
+        }).always(function () {
+            if (activeBakeKey === reqKey) {
+                activeBakePromise = null;
+                activeBakeKey = '';
             }
         });
+
+        return activeBakePromise;
     }
 
-    // Direct QR button on Preset Bar -> immediately open QR modal while baking & syncing in background!
+    // Direct QR button on Preset Bar -> strictly bake preset + GIF before QR / Cloud upload runs
     $(document).on('click', '#btn-preset-qr', function (e) {
         e.preventDefault();
         keepAlive();
         openQrDeliveryModal();
-        forceBakeNow(currentPreset, currentAmount, function () {
-            const $badge = $('#qr-mode-badge');
-            if ($badge.hasClass('cloud') && currentFilename) {
-                triggerBackgroundCloudSync(currentFilename, function (syncRes) {
-                    if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
-                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
-                    }
-                });
-            }
-        });
     });
 
-    // Confirm button on Result Screen -> immediately open Confirm & Print modal while baking in background!
+    // Confirm button on Result Screen -> open Confirm & Print modal and bake in background
     $(document).on('click', '#btn-preset-confirm', function (e) {
         e.preventDefault();
         keepAlive();
         $('#confirmSuccessModal').removeClass('hidden').attr('aria-hidden', 'false');
-        forceBakeNow(currentPreset, currentAmount);
+        forceBakeNow(currentPreset, currentAmount, null, { syncAfter: true });
     });
 
     let qrCountdownTimer = null;
@@ -574,6 +651,8 @@
         const isInGallery = $('#gallery').hasClass('gallery--open') || $('.pswp--open').length > 0;
         const isFromStartScreen = !$resultPage.hasClass('stage--active') || isInGallery;
         const targetFile = explicitFilename || ((!isFromStartScreen && currentFilename) ? currentFilename : 'latest');
+        const needsResultBake = !isFromStartScreen && Boolean(currentFilename) && (!explicitFilename || explicitFilename === currentFilename);
+        const openSeq = ++qrOpenSeq;
 
         // Close any legacy modal if open
         if (typeof photoboothTools !== 'undefined' && photoboothTools.modal && typeof photoboothTools.modal.close === 'function') {
@@ -583,6 +662,7 @@
         const $modal = $('#qrDeliveryModal');
         const $img = $('#qr-modal-img');
         const $spinner = $('#qr-loading-spinner');
+        const $spinnerLabel = $spinner.find('span');
         const $badge = $('#qr-mode-badge');
         const $instruction = $('#qr-modal-instruction');
         const $link = $('#qr-direct-link');
@@ -594,12 +674,21 @@
             $modal.appendTo(document.body);
         }
 
-        // Reset state
+        // Reset state cleanly before baking & fetching QR
         $img.hide().attr('src', '');
+        $link.hide().attr('href', '#');
+        $spinnerLabel.text(needsResultBake ? 'Đang áp dụng bộ lọc màu & hoàn tất ảnh...' : 'Đang khởi tạo mã QR...');
         $spinner.show();
         if (qrCountdownTimer) {
             clearInterval(qrCountdownTimer);
             qrCountdownTimer = null;
+        }
+        $countBox.hide();
+        $finishBtn.toggle(!isInGallery);
+
+        if (needsResultBake) {
+            $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang áp dụng bộ lọc màu...</span>');
+            $instruction.text('Hệ thống đang lưu bộ lọc màu vào Ảnh & GIF trước khi tạo mã QR...');
         }
 
         $modal.removeClass('hidden').attr('aria-hidden', 'false');
@@ -608,16 +697,31 @@
             ? environment.publicFolders.api + '/qrcode.php'
             : 'api/qrcode.php';
 
-        $.ajax({
-            url: apiUrl,
-            method: 'GET',
-            data: {
-                filename: targetFile,
-                json: 1,
-                _t: Date.now()
-            },
-            dataType: 'json'
-        }).done(function (data) {
+        const startQrCountdown = function () {
+            if (!isFromStartScreen) {
+                $countBox.show();
+                $finishBtn.show();
+                $countVal.text('45');
+                let secondsLeft = 45;
+                qrCountdownTimer = setInterval(function () {
+                    secondsLeft--;
+                    $countVal.text(secondsLeft);
+                    if (secondsLeft <= 0) {
+                        clearInterval(qrCountdownTimer);
+                        qrCountdownTimer = null;
+                        window.location.assign('./');
+                    }
+                }, 1000);
+            } else {
+                $countBox.hide();
+                $finishBtn.toggle(!isInGallery);
+            }
+        };
+
+        const applyQrPayload = function (data) {
+            if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
+                return;
+            }
             if (data && data.url) {
                 const resolvedFile = data.filename || targetFile;
                 $link.attr('href', data.url).show();
@@ -632,6 +736,9 @@
                     } else if (resolvedFile && resolvedFile !== 'demo_session.jpg') {
                         $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang đẩy Ảnh & GIF lên Cloud R2...</span>');
                         triggerBackgroundCloudSync(data.session_id || resolvedFile, function (syncRes) {
+                            if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
+                                return;
+                            }
                             if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
                                 $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
                             } else {
@@ -653,28 +760,44 @@
                 const qrImgSrc = data.qr_image || (apiUrl + '?filename=' + encodeURIComponent(resolvedFile) + '&_t=' + Date.now());
                 $img.attr('src', qrImgSrc);
             }
-        }).fail(function () {
-            $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(targetFile) + '&_t=' + Date.now()).show();
-            $spinner.hide();
-        });
+            startQrCountdown();
+        };
 
-        if (!isFromStartScreen) {
-            $countBox.show();
-            $finishBtn.show();
-            $countVal.text('45');
-            let secondsLeft = 45;
-            qrCountdownTimer = setInterval(function () {
-                secondsLeft--;
-                $countVal.text(secondsLeft);
-                if (secondsLeft <= 0) {
-                    clearInterval(qrCountdownTimer);
-                    qrCountdownTimer = null;
-                    window.location.assign('./');
+        const fetchQrAndSync = function (bakeRes) {
+            if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
+                return;
+            }
+            if (bakeRes && bakeRes.qr && bakeRes.qr.url) {
+                applyQrPayload(bakeRes.qr);
+                return;
+            }
+            $spinnerLabel.text('Đang khởi tạo mã QR...');
+
+            $.ajax({
+                url: apiUrl,
+                method: 'GET',
+                data: {
+                    filename: targetFile,
+                    json: 1,
+                    _t: Date.now()
+                },
+                dataType: 'json'
+            }).done(applyQrPayload).fail(function () {
+                if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
+                    return;
                 }
-            }, 1000);
+                $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(targetFile) + '&_t=' + Date.now()).show();
+                $spinner.hide();
+                startQrCountdown();
+            });
+        };
+
+        if (needsResultBake) {
+            forceBakeNow(currentPreset, currentAmount, null, { syncAfter: false, includeQr: true }).then(fetchQrAndSync, function () {
+                fetchQrAndSync(null);
+            });
         } else {
-            $countBox.hide();
-            $finishBtn.toggle(!isInGallery);
+            fetchQrAndSync(null);
         }
     }
 
@@ -717,6 +840,7 @@
     }
 
     function closeQrDeliveryModal() {
+        ++qrOpenSeq;
         if (qrCountdownTimer) {
             clearInterval(qrCountdownTimer);
             qrCountdownTimer = null;
@@ -773,7 +897,13 @@
     // Confirmation Modal actions
     $(document).on('click', '#modal-btn-print', function (e) {
         e.preventDefault();
-        triggerPrintAction();
+        if ($resultPage.hasClass('stage--active') && currentFilename) {
+            forceBakeNow(currentPreset, currentAmount, function () {
+                triggerPrintAction();
+            }, { syncAfter: false });
+        } else {
+            triggerPrintAction();
+        }
     });
 
     $(document).on('click', '#btn-start-qr-settings', function (e) {
@@ -793,6 +923,9 @@
     });
 
     $(document).on('click', '#modal-btn-qr, [data-command="qrbtn"], .qrbtn', function (e) {
+        if (e.isDefaultPrevented() && $(e.target).closest('[data-command="qrbtn"]').length) {
+            return;
+        }
         e.preventDefault();
         openQrDeliveryModal();
     });

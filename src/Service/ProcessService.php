@@ -34,6 +34,12 @@ class ProcessService
                 'command' => 'php ' . PathUtility::getAbsolutePath('api/lightroomWatcher.php'),
                 'enabled' => ($config['lightroom']['enabled'] ?? false),
                 'killSignal' => 15,
+            ]),
+            ProcessFactory::fromConfig([
+                'name' => 'capture_one_watcher',
+                'command' => 'php ' . PathUtility::getAbsolutePath('api/captureOneWatcher.php'),
+                'enabled' => ($config['capture_one']['enabled'] ?? false),
+                'killSignal' => 15,
             ])
         ];
     }

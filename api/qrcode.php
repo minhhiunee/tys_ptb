@@ -46,84 +46,23 @@ if ($filename) {
         exit();
     }
 
-    // Load active Cloud R2 / Venue Wi-Fi configuration via SyncQueueService
     $syncService = SyncQueueService::getInstance();
-    $netConfig = $syncService->getNetworkModeConfig();
-    $activeMode = ($netConfig['mode'] === 'cloud_web' && !empty($netConfig['cloud_url'])) ? 'cloud_web' : 'venue_wifi';
-    $customCloudUrl = trim((string) ($netConfig['cloud_url'] ?? ''));
-    $localIp = trim((string) ($netConfig['venue_ip'] ?? ''));
-    $venueSsid = trim((string) ($netConfig['venue_ssid'] ?? ''));
-    $syncStatus = null;
-
     $sessionId = pathinfo($filename, PATHINFO_FILENAME);
     $imagesDir = FolderEnum::IMAGES->absolute();
-    $metaFilePath = $imagesDir . DIRECTORY_SEPARATOR . 'meta_' . $filename . '.json';
     $savedQrFileName = 'qr_' . $sessionId . '.png';
     $savedQrPath = $imagesDir . DIRECTORY_SEPARATOR . $savedQrFileName;
 
-    $sessionMeta = [];
-    if (is_file($metaFilePath)) {
-        $decodedMeta = json_decode((string) @file_get_contents($metaFilePath), true);
-        if (is_array($decodedMeta)) {
-            $sessionMeta = $decodedMeta;
-        }
+    $wantsJson = !empty($_GET['json']) || (isset($_GET['format']) && $_GET['format'] === 'json');
+    if ($wantsJson || !empty($_GET['regenerate']) || !is_file($savedQrPath)) {
+        $qrPayload = $syncService->buildSessionQrData($filename, [], !empty($_GET['regenerate']));
+    } else {
+        $qrPayload = ['url' => $syncService->resolveQrTargetUrl($filename)];
     }
-
-    $url = $syncService->resolveQrTargetUrl($filename);
-
-    if ($activeMode === 'cloud_web' && $customCloudUrl !== '' && !empty($_GET['json'])) {
-        $rec = $syncService->getSessionRecord($sessionId);
-        if (!$rec) {
-            $rec = $syncService->enqueueSession($sessionId, ['final_photo' => $filename], false);
-        }
-        $syncStatus = $rec['status'] ?? 'pending';
-    }
-
-    // Ensure QR image is generated and persisted alongside the photo in data/images/qr_<sessionId>.png
-    // so viewing history in Gallery always has the pre-generated QR code ready on disk
-    $needGenerateQrFile = !is_file($savedQrPath)
-        || (($sessionMeta['qr_url'] ?? '') !== $url)
-        || !empty($_GET['regenerate']);
-
-    if ($needGenerateQrFile) {
-        try {
-            $qrResult = QrCodeUtility::create($url);
-            @file_put_contents($savedQrPath, $qrResult->getString());
-            $sessionMeta['session_id'] = $sessionMeta['session_id'] ?? $sessionId;
-            $sessionMeta['final_photo'] = $sessionMeta['final_photo'] ?? $filename;
-            $sessionMeta['qr_url'] = $url;
-            $sessionMeta['qr_file'] = $savedQrFileName;
-            @file_put_contents(
-                $metaFilePath,
-                json_encode($sessionMeta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE)
-            );
-        } catch (\Throwable) {
-            // fallback to on-the-fly rendering below
-        }
-    }
-
-    $qrPublicUrl = is_file($savedQrPath)
-        ? PathUtility::getPublicPath('data/images/' . $savedQrFileName) . '?v=' . (int) @filemtime($savedQrPath)
-        : PathUtility::getPublicPath('api/qrcode.php?filename=' . rawurlencode($filename) . '&mode=' . $activeMode . '&v=' . ($netConfig['updated_at'] ?? time()));
 
     // Return JSON metadata if requested by frontend modal
-    if (!empty($_GET['json']) || (isset($_GET['format']) && $_GET['format'] === 'json')) {
+    if ($wantsJson) {
         header('Content-Type: application/json');
-        echo json_encode([
-            'success' => true,
-            'mode' => $activeMode,
-            'url' => $url,
-            'qr_image' => $qrPublicUrl,
-            'qr_file' => is_file($savedQrPath) ? $savedQrFileName : null,
-            'filename' => $filename,
-            'session_id' => $sessionId,
-            'is_cloud' => ($activeMode === 'cloud_web'),
-            'is_local' => ($activeMode === 'venue_wifi'),
-            'venue_ip' => $localIp,
-            'venue_ssid' => $venueSsid,
-            'cloud_url' => $customCloudUrl,
-            'sync_status' => $syncStatus,
-        ]);
+        echo json_encode($qrPayload);
         exit();
     }
 
@@ -133,6 +72,8 @@ if ($filename) {
         readfile($savedQrPath);
         exit();
     }
+
+    $url = (string) ($qrPayload['url'] ?? '');
 
     try {
         $result = QrCodeUtility::create($url);

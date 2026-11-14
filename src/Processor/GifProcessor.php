@@ -24,8 +24,8 @@ class GifProcessor
      * @param array<int, string[]> $poseFrameSequences Per-pose array of time-lapse frame file paths
      * @param array $layoutData Parsed layout JSON (width, height, frame, background_color, layout)
      * @param string $targetGifPath Output path for the animated .gif
-     * @param int $delayMs Frame duration in milliseconds (default: 140ms ≈ 7 fps speedup)
-     * @param int $maxDimension Maximum output height/width in pixels (optimized default: 480px)
+     * @param int $delayMs Frame duration in milliseconds (default: 210ms ≈ 2x speedup from 420ms capture)
+     * @param int $maxDimension Maximum output height/width in pixels (default: 720px)
      * @param string|null $presetId Optional color preset ID to apply to slot photos
      * @param int $presetAmount Optional preset intensity (0-100)
      */
@@ -33,8 +33,8 @@ class GifProcessor
         array $poseFrameSequences,
         array $layoutData,
         string $targetGifPath,
-        int $delayMs = 140,
-        int $maxDimension = 480,
+        int $delayMs = 210,
+        int $maxDimension = 720,
         ?string $presetId = null,
         int $presetAmount = 100,
         ?string $baseCollageImagePath = null
@@ -64,7 +64,7 @@ class GifProcessor
             // Normalize each pose's sequence and synthesize motion if a pose only has 1 static frame
             $normalizedPoses = [];
             $maxSeqCount = 0;
-            foreach (array_values($poseFrameSequences) as $pIdx => $seq) {
+            foreach (array_values($poseFrameSequences) as $seq) {
                 $validSeq = [];
                 if (is_array($seq)) {
                     foreach ($seq as $fPath) {
@@ -74,7 +74,7 @@ class GifProcessor
                     }
                 }
                 if (count($validSeq) === 1) {
-                    $syn = $this->synthesizeTimelapseFromSingleFrame($validSeq[0], 480);
+                    $syn = $this->synthesizeTimelapseFromSingleFrame($validSeq[0], $maxDimension);
                     if (!empty($syn)) {
                         foreach ($syn as $sf) {
                             $tempSynthFiles[] = $sf;
@@ -83,20 +83,6 @@ class GifProcessor
                     }
                 }
                 if (!empty($validSeq)) {
-                    // Apply color preset once per unique frame if requested
-                    if ($presetService !== null && $presetId !== null) {
-                        $coloredSeq = [];
-                        foreach ($validSeq as $fIdx => $origFramePath) {
-                            $tmpPresetFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_fpreset_%d_%d_%s.jpg', $pIdx, $fIdx, uniqid());
-                            if ($presetService->applyPreset($origFramePath, $tmpPresetFile, $presetId, $presetAmount) && is_file($tmpPresetFile)) {
-                                $tempPresetFiles[] = $tmpPresetFile;
-                                $coloredSeq[] = $tmpPresetFile;
-                            } else {
-                                $coloredSeq[] = $origFramePath;
-                            }
-                        }
-                        $validSeq = $coloredSeq;
-                    }
                     $normalizedPoses[] = $validSeq;
                     $maxSeqCount = max($maxSeqCount, count($validSeq));
                 }
@@ -104,6 +90,59 @@ class GifProcessor
 
             if (empty($normalizedPoses)) {
                 return false;
+            }
+
+            $totalTicks = max(8, min(14, $maxSeqCount));
+            // Preserve ~2x playback speed when source sequence exceeds the 14-tick cap
+            $effectiveDelayMs = ($maxSeqCount > $totalTicks && $totalTicks > 0)
+                ? min(500, (int) round($delayMs * ($maxSeqCount / $totalTicks)))
+                : $delayMs;
+
+            // Only resize + color-grade the unique pose frames actually sampled across $totalTicks
+            if ($presetService !== null && $presetId !== null) {
+                $usedFramePaths = [];
+                $poseCount = count($normalizedPoses);
+                for ($t = 0; $t < $totalTicks; $t++) {
+                    foreach ($slots as $slotIdx => $slotDef) {
+                        if (!is_array($slotDef) || count($slotDef) < 4) {
+                            continue;
+                        }
+                        $poseSeq = $normalizedPoses[$slotIdx % $poseCount];
+                        $seqLen = count($poseSeq);
+                        $fIdx = ($totalTicks > 1) ? (int) round(($t / ($totalTicks - 1)) * ($seqLen - 1)) : 0;
+                        $fIdx = max(0, min($seqLen - 1, $fIdx));
+                        $usedFramePaths[$poseSeq[$fIdx]] = true;
+                    }
+                }
+
+                $presetMap = [];
+                $slotMaxDim = max(320, $maxDimension);
+                foreach (array_keys($usedFramePaths) as $idx => $origFramePath) {
+                    $tmpResized = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_fsmall_%d_%s.jpg', $idx, uniqid());
+                    $tmpPresetFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_fpreset_%d_%s.jpg', $idx, uniqid());
+                    $dummyW = null;
+                    $dummyH = null;
+                    $lutSource = $this->resizeFrameForGif($origFramePath, $tmpResized, $slotMaxDim, $dummyW, $dummyH)
+                        ? $tmpResized
+                        : $origFramePath;
+                    if ($lutSource === $tmpResized) {
+                        $tempPresetFiles[] = $tmpResized;
+                    }
+                    if ($presetService->applyPreset($lutSource, $tmpPresetFile, $presetId, $presetAmount, null, 88) && is_file($tmpPresetFile)) {
+                        $tempPresetFiles[] = $tmpPresetFile;
+                        $presetMap[$origFramePath] = $tmpPresetFile;
+                    }
+                }
+
+                if (!empty($presetMap)) {
+                    foreach ($normalizedPoses as $pIdx => $poseSeq) {
+                        foreach ($poseSeq as $fIdx => $origPath) {
+                            if (isset($presetMap[$origPath])) {
+                                $normalizedPoses[$pIdx][$fIdx] = $presetMap[$origPath];
+                            }
+                        }
+                    }
+                }
             }
 
             // Pre-scale Frame PNG overlay once to ($outW, $outH)
@@ -148,8 +187,6 @@ class GifProcessor
                     imagedestroy($rawBase);
                 }
             }
-
-            $totalTicks = max(8, min(14, $maxSeqCount));
 
             // Cache GdImage resources per pose frame path to avoid re-decoding the same frame
             $gdCache = [];
@@ -244,12 +281,12 @@ class GifProcessor
             }
 
             if (extension_loaded('imagick')) {
-                if ($this->encodeWithImagick($tempTickFiles, $targetGifPath, $delayMs)) {
+                if ($this->encodeWithImagick($tempTickFiles, $targetGifPath, $effectiveDelayMs)) {
                     return true;
                 }
             }
 
-            return $this->encodeWithGdGif89a($tempTickFiles, $targetGifPath, $delayMs);
+            return $this->encodeWithGdGif89a($tempTickFiles, $targetGifPath, $effectiveDelayMs);
         } catch (\Throwable $e) {
             $this->logger->error('GifProcessor createFramedTimelapseGif error: ' . $e->getMessage());
             return false;
@@ -282,8 +319,8 @@ class GifProcessor
     public function createAnimatedGif(
         array $sourceFrames,
         string $targetGifPath,
-        int $delayMs = 140,
-        int $maxDimension = 480,
+        int $delayMs = 210,
+        int $maxDimension = 720,
         ?string $presetId = null,
         int $presetAmount = 100
     ): bool {
@@ -500,8 +537,13 @@ class GifProcessor
             }
 
             $animation->setImageIterations(0); // Infinite loop
-            $result = $animation->writeImages($targetGifPath, true);
+            // Shared 128-color palette + delta layer optimization cuts GIF size 3x-6x and speeds Cloud upload
+            $animation->quantizeImages(128, \Imagick::COLORSPACE_RGB, 0, false, false);
+            $optimized = $animation->optimizeImageLayers();
+            $result = $optimized->writeImages($targetGifPath, true);
 
+            $optimized->clear();
+            $optimized->destroy();
             $animation->clear();
             $animation->destroy();
 

@@ -24,6 +24,9 @@ enum FolderEnum: string
     case VAR = 'var';
     case LR_IMPORT = 'data/lr_import';
     case LR_EXPORT = 'data/lr_export';
+    case C1_INPUT = 'data/c1_input';
+    case C1_OUTPUT = 'data/c1_output';
+    case C1_ARCHIVE = 'data/c1_archive';
 
     public function public(): string
     {
@@ -54,6 +57,9 @@ enum FolderEnum: string
             FolderEnum::VAR => 'var',
             FolderEnum::LR_IMPORT => 'lr_import',
             FolderEnum::LR_EXPORT => 'lr_export',
+            FolderEnum::C1_INPUT => 'c1_input',
+            FolderEnum::C1_OUTPUT => 'c1_output',
+            FolderEnum::C1_ARCHIVE => 'c1_archive',
         };
     }
 }

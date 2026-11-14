@@ -3,244 +3,531 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0D1015" />
-  <title>TYS Photobooth • Lưu ảnh kỷ niệm</title>
+  <meta name="theme-color" content="#09051D" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>TRẠM TINH HÀ • Lưu Ảnh Kỷ Niệm</title>
+  <link rel="icon" type="image/png" sizes="64x64" href="./assets/favicon.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/apple-touch-icon.png" />
   <style>
     :root {
-      --bg: #0D1015;
-      --surface: #151A23;
-      --elevated: #1E2532;
-      --paper: #F5F2EB;
-      --border: rgba(243, 241, 236, 0.14);
-      --border-strong: rgba(243, 241, 236, 0.26);
-      --text: #F3F1EC;
-      --muted: #9BA3B2;
-      --amber: #E59A3C;
-      --amber-soft: rgba(229, 154, 60, 0.16);
-      --emerald: #1F9D6E;
-      --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+      --bg-deep: #07041A;
+      --glass-bg: rgba(13, 8, 40, 0.78);
+      --glass-bg-hover: rgba(24, 15, 68, 0.9);
+      --glass-border: rgba(167, 139, 250, 0.28);
+      --text-pure: #F8FAFF;
+      --text-muted: #B6BCE0;
+      --emerald-1: #10B981;
+      --emerald-2: #059669;
+      --cyan-1: #38BDF8;
+      --violet-1: #818CF8;
+      --font-main: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "SF Pro Display", Roboto, "Segoe UI", sans-serif;
+      --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+      --top-pad: max(8px, env(safe-area-inset-top));
+      --bottom-pad: max(8px, env(safe-area-inset-bottom));
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-    body {
-      min-height: 100dvh;
-      background-color: var(--bg);
-      color: var(--text);
-      font-family: var(--font-sans);
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      height: 100%;
+      height: 100dvh;
+      width: 100%;
+      overflow: hidden;
+      background-color: var(--bg-deep);
+      color: var(--text-pure);
+      font-family: var(--font-main);
+      position: fixed;
+      top: 0;
+      left: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .cosmos-bg {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      background-image: url('./assets/bg-portrait.jpg');
+      background-position: center center;
+      background-size: cover;
+      background-repeat: no-repeat;
+      pointer-events: none;
+    }
+
+    @media (orientation: landscape) and (min-width: 768px) {
+      .cosmos-bg {
+        background-image: url('./assets/bg-landscape.jpg');
+      }
+    }
+
+    .cosmos-vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      background:
+        radial-gradient(circle at 50% 48%, rgba(8, 4, 26, 0.34) 0%, rgba(6, 3, 20, 0.78) 100%),
+        linear-gradient(180deg, rgba(10, 5, 34, 0.52) 0%, rgba(8, 4, 26, 0.14) 45%, rgba(6, 3, 20, 0.72) 100%);
+      pointer-events: none;
+    }
+
+    .viewer-shell {
+      position: relative;
+      z-index: 2;
+      height: 100%;
+      height: 100dvh;
+      width: 100%;
       display: flex;
       flex-direction: column;
-      align-items: center;
-      padding: 18px 16px 40px;
-    }
-    .shell { width: 100%; max-width: 500px; display: flex; flex-direction: column; gap: 14px; }
-    .header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 4px 2px 6px;
-      border-bottom: 1px solid var(--border);
-    }
-    .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
-    .header p { font-size: 13px; color: var(--muted); text-align: right; }
-
-    .media-tabs {
-      display: none;
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      padding: 5px;
-      border-radius: 14px;
+      overflow: hidden;
+      padding: var(--top-pad) 10px var(--bottom-pad);
       gap: 6px;
     }
-    .media-tabs.visible { display: grid; grid-template-columns: 1fr 1fr; }
-    .tab-btn {
+
+    /* 1. Compact Header: Logo + Chào Tân Sinh Viên 2026 + TRẠM TINH HÀ underneath */
+    .viewer-top-bar {
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 5px 10px 5px 7px;
       min-height: 46px;
+      background: var(--glass-bg);
+      backdrop-filter: blur(22px);
+      -webkit-backdrop-filter: blur(22px);
+      border: 1px solid var(--glass-border);
+      border-radius: 16px;
+      box-shadow: 0 8px 24px rgba(3, 1, 16, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .brand-cluster {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .brand-logo-badge {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #FFFFFF;
+      padding: 1.5px;
+      flex-shrink: 0;
+      box-shadow: 0 0 12px rgba(125, 211, 252, 0.45);
+      object-fit: contain;
+    }
+
+    .brand-titles {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 2px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .brand-chao-img {
+      display: block;
+      height: 10px;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 0 6px rgba(196, 181, 253, 0.65));
+    }
+
+    .brand-title-img {
+      display: block;
+      height: 17px;
+      width: auto;
+      max-width: 100%;
+      object-fit: contain;
+      filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.55));
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+
+    .session-badge {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      color: #CBD5E1;
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(125, 211, 252, 0.28);
+      padding: 3px 7px;
+      border-radius: 7px;
+      max-width: 112px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .icon-btn {
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      border: 1px solid var(--glass-border);
+      background: rgba(255, 255, 255, 0.06);
+      color: var(--text-pure);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    /* 2. Full-Screen Photo & GIF Hero Stage */
+    .photo-stage {
+      position: relative;
+      flex: 1 1 0%;
+      min-height: 0;
+      min-width: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      padding: 0;
+      cursor: zoom-in;
+    }
+
+    .image-wrapper {
+      position: relative;
+      max-width: 100%;
+      max-height: 100%;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transform-origin: center center;
+      transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+    }
+
+    .image-wrapper.zoomed {
+      transform: scale(2.0);
+      cursor: zoom-out;
+    }
+
+    .media-display {
+      display: none;
+      width: 100%;
+      height: 100%;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      border-radius: 8px;
+      filter: drop-shadow(0 16px 36px rgba(2, 1, 14, 0.92));
+      transition: opacity 0.2s ease, filter 0.2s ease;
+      pointer-events: auto;
+    }
+
+    .media-display.active {
+      display: block;
+    }
+
+    .state-card {
+      background: var(--glass-bg);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+      border: 1px solid var(--glass-border);
+      padding: 24px 20px;
+      border-radius: 18px;
+      text-align: center;
+      max-width: 320px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid rgba(56, 189, 248, 0.2);
+      border-top-color: var(--cyan-1);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .state-title { font-size: 14.5px; font-weight: 700; color: var(--text-pure); }
+    .state-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+
+    /* 3. Floating Bottom Control Island */
+    .viewer-dock {
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 480px;
+      margin: 0 auto;
+      z-index: 20;
+      display: none;
+      flex-direction: column;
+      gap: 5px;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+
+    .viewer-dock.visible {
+      display: flex;
+    }
+
+    .media-switcher {
+      display: none;
+      align-self: center;
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--glass-border);
+      padding: 3px;
+      border-radius: 999px;
+      gap: 4px;
+      box-shadow: 0 8px 20px rgba(3, 1, 16, 0.5);
+    }
+
+    .media-switcher.visible {
+      display: flex;
+    }
+
+    .switch-pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-height: 29px;
+      padding: 0 13px;
+      border-radius: 999px;
       border: 1px solid transparent;
       background: transparent;
-      color: var(--muted);
-      padding: 10px 14px;
-      border-radius: 10px;
-      font-family: var(--font-sans);
-      font-size: 14px;
+      color: var(--text-muted);
+      font-size: 11.5px;
       font-weight: 700;
       cursor: pointer;
-      touch-action: manipulation;
-      user-select: none;
-      transition: background-color 0.16s ease, color 0.16s ease, transform 0.12s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-    }
-    .tab-btn:hover { color: var(--text); background: rgba(243, 241, 236, 0.05); }
-    .tab-btn:active { transform: scale(0.98); }
-    .tab-btn.active {
-      background: var(--amber);
-      color: #0D1015;
-      border-color: #F4B35E;
-      box-shadow: 0 4px 14px rgba(229, 154, 60, 0.3);
+      transition: background 0.16s ease, color 0.16s ease, transform 0.12s ease;
     }
 
-    .stage-card {
-      background: var(--surface);
-      border: 1px solid var(--border-strong);
-      border-radius: 18px;
-      padding: 14px;
-      box-shadow: 0 24px 54px rgba(0, 0, 0, 0.65);
-      min-height: 360px;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-    .media-view { width: 100%; display: none; flex-direction: column; align-items: center; }
-    .media-view.active { display: flex; }
-    .print-mount {
-      width: 100%;
-      background: var(--paper);
-      padding: 8px 8px 10px;
-      border-radius: 10px;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      cursor: zoom-in;
-      transition: padding 0.2s ease;
-    }
-    .print-mount.zoomed { padding: 2px; cursor: zoom-out; }
-    .media-view img {
-      width: 100%;
-      max-height: 66dvh;
-      object-fit: contain;
-      border-radius: 6px;
-      background: #0D1015;
-      transition: max-height 0.2s ease;
-    }
-    .print-mount.zoomed img { max-height: 82dvh; }
-
-    .meta-bar {
-      width: 100%;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-top: 12px;
-      padding: 2px 4px 0;
-      font-family: var(--font-mono);
-      font-variant-numeric: tabular-nums;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .preset-tag {
-      background: var(--amber-soft);
-      border: 1px solid rgba(229, 154, 60, 0.4);
-      padding: 3px 10px;
-      border-radius: 6px;
-      color: var(--amber);
-      font-weight: 600;
+    .switch-pill:hover {
+      color: var(--text-pure);
     }
 
-    .state-box { text-align: center; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
-    .spinner {
-      width: 40px; height: 40px; border: 3px solid rgba(229, 154, 60, 0.2);
-      border-top-color: var(--amber); border-radius: 50%; animation: spin 0.85s linear infinite;
+    .switch-pill:active {
+      transform: scale(0.96);
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .state-title { font-size: 16px; font-weight: 700; color: var(--text); }
-    .state-desc { font-size: 13.5px; color: var(--muted); line-height: 1.5; max-width: 310px; }
 
-    .actions { display: none; flex-direction: column; gap: 10px; }
-    .actions.visible { display: flex; }
-    .btn-primary, .btn-secondary, .btn-share {
+    .switch-pill.active {
+      background: linear-gradient(135deg, var(--cyan-1), var(--violet-1));
+      color: #07041A;
+      box-shadow: 0 3px 14px rgba(56, 189, 248, 0.4);
+    }
+
+    .action-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       width: 100%;
-      min-height: 52px;
-      padding: 13px 18px;
-      border-radius: 14px;
-      font-family: var(--font-sans);
-      font-size: 15px;
+    }
+
+    .btn-primary {
+      flex: 1;
+      min-height: 42px;
+      padding: 8px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(110, 231, 183, 0.35);
+      background: linear-gradient(135deg, var(--emerald-1), var(--emerald-2));
+      color: #FFFFFF;
+      font-size: 13.5px;
       font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
       text-decoration: none;
-      display: flex;
+      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+      transition: transform 0.12s ease, filter 0.15s ease;
+    }
+
+    .btn-primary:active {
+      transform: scale(0.97);
+      filter: brightness(0.92);
+    }
+
+    .btn-secondary {
+      min-height: 42px;
+      padding: 8px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(125, 211, 252, 0.42);
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: var(--cyan-1);
+      font-size: 12.5px;
+      font-weight: 700;
+      display: none;
       align-items: center;
       justify-content: center;
-      gap: 10px;
+      gap: 5px;
       cursor: pointer;
-      touch-action: manipulation;
-      user-select: none;
-      transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+      text-decoration: none;
+      white-space: nowrap;
+      box-shadow: 0 4px 14px rgba(3, 1, 16, 0.45);
     }
-    .btn-primary:active, .btn-secondary:active, .btn-share:active { transform: scale(0.98); }
-    .btn-primary { background: var(--emerald); border: 1px solid #28B882; color: #FFFFFF; box-shadow: 0 8px 22px rgba(31, 157, 110, 0.32); }
-    .btn-primary:hover { background: #24B27D; }
-    .btn-secondary { background: var(--elevated); border: 1px solid rgba(229, 154, 60, 0.5); color: var(--amber); }
-    .btn-secondary:hover { background: var(--amber); color: #0D1015; }
-    .btn-share { background: var(--surface); border: 1px solid var(--border-strong); color: var(--text); font-size: 14px; }
-    .btn-share:hover { background: var(--elevated); }
-    .ios-tip {
+
+    .btn-icon-share {
+      width: 42px;
+      height: 42px;
+      flex-shrink: 0;
+      border-radius: 12px;
+      border: 1px solid var(--glass-border);
+      background: var(--glass-bg);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      color: var(--text-pure);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background-color 0.15s ease, transform 0.12s ease;
+      box-shadow: 0 4px 14px rgba(3, 1, 16, 0.45);
+    }
+
+    .btn-icon-share:active {
+      transform: scale(0.92);
+    }
+
+    .bottom-guidance {
       text-align: center;
-      font-size: 12.5px;
-      color: var(--muted);
-      line-height: 1.45;
-      padding: 6px 10px;
-      background: rgba(243, 241, 236, 0.04);
-      border-radius: 10px;
-      border: 1px solid var(--border);
+      padding: 1px 4px 0;
+      line-height: 1.3;
     }
-    .footer { margin-top: 6px; text-align: center; font-size: 12px; color: var(--muted); }
+
+    .guide-text {
+      font-size: 10px;
+      color: #CBD5E1;
+      font-weight: 500;
+    }
+
+    .meta-sub {
+      font-size: 9.5px;
+      color: #94A3B8;
+      margin-top: 1px;
+    }
+
+    body.zen-mode .viewer-top-bar,
+    body.zen-mode .viewer-dock {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(10px);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    @media (max-width: 390px) {
+      .session-badge {
+        display: none;
+      }
+    }
+
+    @media (min-width: 768px) {
+      .viewer-top-bar,
+      .viewer-dock {
+        max-width: 540px;
+      }
+      .brand-logo-badge { width: 38px; height: 38px; }
+      .brand-chao-img { height: 11px; }
+      .brand-title-img { height: 19px; }
+    }
   </style>
 </head>
 <body>
-  <div class="shell">
-    <header class="header">
-      <h1>TYS Photobooth</h1>
-      <p>Lưu ảnh & GIF chất lượng cao</p>
+  <div class="cosmos-bg" aria-hidden="true"></div>
+  <div class="cosmos-vignette" aria-hidden="true"></div>
+
+  <main class="viewer-shell">
+    <header class="viewer-top-bar">
+      <div class="brand-cluster">
+        <img src="./assets/logo.png" alt="Logo Hội Sinh Viên Đất Cầu Vồng" class="brand-logo-badge" />
+        <div class="brand-titles">
+          <img src="./assets/chao-tsv.png" alt="CHÀO TÂN SINH VIÊN 2026" class="brand-chao-img" />
+          <img src="./assets/tram-tinh-ha.png" alt="TRẠM TINH HÀ" class="brand-title-img" />
+        </div>
+      </div>
+      <div class="header-actions">
+        <span class="session-badge" id="session-badge">#--</span>
+        <button type="button" class="icon-btn" id="btn-fullscreen" title="Toàn màn hình" aria-label="Toàn màn hình">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+          </svg>
+        </button>
+      </div>
     </header>
 
-    <div id="media-tabs" class="media-tabs" role="tablist">
-      <button type="button" class="tab-btn active" data-target="photo" role="tab" aria-selected="true">Ảnh ghép khung</button>
-      <button type="button" class="tab-btn" data-target="gif" role="tab" aria-selected="false">Ảnh động GIF (x3)</button>
-    </div>
-
-    <div class="stage-card" id="stage-touch-surface">
-      <div id="state-loading" class="state-box">
+    <section class="photo-stage" id="stage-touch-surface">
+      <div id="state-loading" class="state-card">
         <div class="spinner"></div>
         <div class="state-title" id="loading-title">Đang nhận ảnh từ buồng chụp...</div>
         <div class="state-desc" id="loading-desc">Hệ thống đang đồng bộ ảnh gốc và GIF lên đám mây (khoảng 1–3 giây).</div>
       </div>
 
-      <div id="view-photo" class="media-view">
-        <div class="print-mount" title="Chạm hoặc click để phóng to/thu nhỏ">
-          <img id="img-photo" src="" alt="Ảnh ghép khung Photobooth" />
-        </div>
+      <div class="image-wrapper" id="image-wrapper" style="display:none;">
+        <img id="img-photo" class="media-display active" src="" alt="Ảnh Photobooth" draggable="false" />
+        <img id="img-gif" class="media-display" src="" alt="Ảnh động GIF" draggable="false" />
+      </div>
+    </section>
+
+    <footer class="viewer-dock" id="action-buttons">
+      <div id="media-tabs" class="media-switcher">
+        <button type="button" class="switch-pill active" data-target="photo">Ảnh Khung (HD)</button>
+        <button type="button" class="switch-pill" data-target="gif">Ảnh Động GIF</button>
       </div>
 
-      <div id="view-gif" class="media-view">
-        <div class="print-mount" title="Chạm hoặc click để phóng to/thu nhỏ">
-          <img id="img-gif" src="" alt="Ảnh động GIF Photobooth" />
-        </div>
+      <div class="action-row">
+        <a id="btn-dl-photo" href="#" class="btn-primary" download>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span id="btn-dl-text">Lưu Ảnh Về Máy</span>
+        </a>
+
+        <a id="btn-dl-gif" href="#" class="btn-secondary" download>
+          <span>Tải GIF</span>
+        </a>
+
+        <button type="button" id="btn-native-share" class="btn-icon-share" title="Chia sẻ ảnh" aria-label="Chia sẻ">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+            <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+          </svg>
+        </button>
       </div>
 
-      <div id="meta-bar" class="meta-bar" style="display:none;">
-        <span id="session-label">Mã: --</span>
-        <span id="preset-label" class="preset-tag">Gốc</span>
+      <div class="bottom-guidance">
+        <div class="guide-text">💡 Giữ ảnh để Lưu vào Album • Chạm 2 lần để phóng to • Tự động lưu 7 ngày</div>
+        <div class="meta-sub" id="footer-meta">Phiên: <span id="session-foot">--</span></div>
       </div>
-    </div>
-
-    <div id="action-buttons" class="actions">
-      <a id="btn-dl-photo" href="#" class="btn-primary" download>Tải ảnh ghép khung (JPG)</a>
-      <a id="btn-dl-gif" href="#" class="btn-secondary" style="display:none;" download>Tải ảnh động tua nhanh (GIF)</a>
-      <button type="button" id="btn-native-share" class="btn-share" style="display:none;">Lưu thẳng vào Album / Chia sẻ nhanh</button>
-      <div class="ios-tip">
-        Mẹo nhỏ: Bạn có thể <b>nhấn giữ trực tiếp vào bức ảnh</b> để chọn <b>"Lưu vào Ảnh"</b> trên iPhone/Android, hoặc chạm nhẹ vào ảnh để phóng lớn.
-      </div>
-    </div>
-
-    <div class="footer">Bản kỷ niệm được lưu trữ an toàn trên Cloudflare R2.</div>
-  </div>
+    </footer>
+  </main>
 
   <script>
     (function () {
       const WORKER_API_BASE = window.PHOTOBOOTH_WORKER_URL || '';
-
       const params = new URLSearchParams(window.location.search);
       const rawSession = params.get('s') || params.get('session') || params.get('image') || '';
       const sessionId = rawSession.replace(/\.(jpg|jpeg|png|gif)$/i, '').replace(/[^A-Za-z0-9._-]/g, '');
@@ -248,23 +535,34 @@
       const stateLoading = document.getElementById('state-loading');
       const loadingTitle = document.getElementById('loading-title');
       const loadingDesc = document.getElementById('loading-desc');
+      const imageWrapper = document.getElementById('image-wrapper');
       const mediaTabs = document.getElementById('media-tabs');
-      const viewPhoto = document.getElementById('view-photo');
-      const viewGif = document.getElementById('view-gif');
       const imgPhoto = document.getElementById('img-photo');
       const imgGif = document.getElementById('img-gif');
-      const metaBar = document.getElementById('meta-bar');
-      const sessionLabel = document.getElementById('session-label');
-      const presetLabel = document.getElementById('preset-label');
+      const sessionBadge = document.getElementById('session-badge');
+      const sessionFoot = document.getElementById('session-foot');
+      const footerMeta = document.getElementById('footer-meta');
       const actionButtons = document.getElementById('action-buttons');
       const btnDlPhoto = document.getElementById('btn-dl-photo');
+      const btnDlText = document.getElementById('btn-dl-text');
       const btnDlGif = document.getElementById('btn-dl-gif');
       const btnNativeShare = document.getElementById('btn-native-share');
       const stageSurface = document.getElementById('stage-touch-surface');
+      const fsBtn = document.getElementById('btn-fullscreen');
 
       let currentSessionData = null;
       let activeTab = 'photo';
       let pollCount = 0;
+
+      if (fsBtn) {
+        fsBtn.addEventListener('click', () => {
+          if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => document.body.classList.toggle('zen-mode'));
+          } else {
+            document.exitFullscreen().catch(() => {});
+          }
+        });
+      }
 
       if (!sessionId) {
         loadingTitle.textContent = 'Chưa có mã phiên chụp';
@@ -273,27 +571,52 @@
         return;
       }
 
+      sessionBadge.textContent = '#' + sessionId;
+      if (sessionFoot) sessionFoot.textContent = sessionId;
+
       function setActiveTab(target) {
         activeTab = target;
-        document.querySelectorAll('.tab-btn').forEach((b) => {
-          const isMatch = b.getAttribute('data-target') === target;
-          b.classList.toggle('active', isMatch);
-          b.setAttribute('aria-selected', isMatch ? 'true' : 'false');
+        document.querySelectorAll('.switch-pill').forEach((b) => {
+          b.classList.toggle('active', b.getAttribute('data-target') === target);
         });
-        viewPhoto.classList.toggle('active', target === 'photo');
-        viewGif.classList.toggle('active', target === 'gif');
+        if (target === 'gif') {
+          imgPhoto.classList.remove('active');
+          imgGif.classList.add('active');
+          btnDlText.textContent = 'Lưu Ảnh Động (GIF)';
+          if (currentSessionData && currentSessionData.gif_download_url) {
+            btnDlPhoto.href = currentSessionData.gif_download_url;
+          }
+        } else {
+          imgGif.classList.remove('active');
+          imgPhoto.classList.add('active');
+          btnDlText.textContent = 'Lưu Ảnh Về Máy';
+          if (currentSessionData && currentSessionData.photo_download_url) {
+            btnDlPhoto.href = currentSessionData.photo_download_url;
+          }
+        }
       }
 
-      document.querySelectorAll('.tab-btn').forEach((btn) => {
+      document.querySelectorAll('.switch-pill').forEach((btn) => {
         btn.addEventListener('click', () => {
           setActiveTab(btn.getAttribute('data-target'));
         });
       });
 
-      document.querySelectorAll('.print-mount').forEach((mount) => {
-        mount.addEventListener('click', () => {
-          mount.classList.toggle('zoomed');
-        });
+      let lastTap = 0;
+      let tapTimer = null;
+      stageSurface.addEventListener('click', () => {
+        const now = Date.now();
+        if (now - lastTap < 300) {
+          clearTimeout(tapTimer);
+          imageWrapper.classList.toggle('zoomed');
+        } else {
+          tapTimer = setTimeout(() => {
+            if (!imageWrapper.classList.contains('zoomed')) {
+              document.body.classList.toggle('zen-mode');
+            }
+          }, 250);
+        }
+        lastTap = now;
       });
 
       let touchStartX = 0;
@@ -304,50 +627,39 @@
       }, { passive: true });
 
       stageSurface.addEventListener('touchend', (e) => {
-        if (!mediaTabs.classList.contains('visible')) {
-          return;
-        }
+        if (!mediaTabs.classList.contains('visible')) return;
         if (e.changedTouches && e.changedTouches.length === 1) {
           const dx = e.changedTouches[0].clientX - touchStartX;
-          if (Math.abs(dx) > 55) {
+          if (Math.abs(dx) > 50) {
             setActiveTab(dx < 0 ? 'gif' : 'photo');
           }
         }
       }, { passive: true });
 
-      if (navigator.share && navigator.canShare) {
+      if (navigator.share) {
         btnNativeShare.style.display = 'flex';
         btnNativeShare.addEventListener('click', async () => {
-          if (!currentSessionData) {
-            return;
-          }
+          if (!currentSessionData) return;
           const isGif = activeTab === 'gif' && currentSessionData.gif_url;
           const fileUrl = isGif ? currentSessionData.gif_url : currentSessionData.photo_url;
-          const fileName = isGif
-            ? 'Photobooth_' + sessionId + '.gif'
-            : 'Photobooth_' + sessionId + '.jpg';
+          const fileName = isGif ? 'Photobooth_' + sessionId + '.gif' : 'Photobooth_' + sessionId + '.jpg';
           const mimeType = isGif ? 'image/gif' : 'image/jpeg';
 
-          const origText = btnNativeShare.innerHTML;
-          btnNativeShare.innerHTML = '<span>Đang chuẩn bị file...</span>';
           try {
-            const res = await fetch(fileUrl);
-            const blob = await res.blob();
-            const file = new File([blob], fileName, { type: mimeType });
-            if (navigator.canShare({ files: [file] })) {
-              await navigator.share({
-                title: 'TYS Photobooth',
-                files: [file],
-              });
-            } else {
-              window.location.href = isGif ? currentSessionData.gif_download_url : currentSessionData.photo_download_url;
+            if (window.fetch && window.File && navigator.canShare) {
+              const res = await fetch(fileUrl);
+              const blob = await res.blob();
+              const file = new File([blob], fileName, { type: mimeType });
+              if (navigator.canShare({ files: [file] })) {
+                await navigator.share({ title: 'TRẠM TINH HÀ', files: [file] });
+                return;
+              }
             }
+            await navigator.share({ title: 'TRẠM TINH HÀ', url: window.location.href });
           } catch (e) {
-            if (e && e.name !== 'AbortError') {
+            if (e.name !== 'AbortError') {
               window.location.href = isGif ? currentSessionData.gif_download_url : currentSessionData.photo_download_url;
             }
-          } finally {
-            btnNativeShare.innerHTML = origText;
           }
         });
       }
@@ -359,21 +671,26 @@
           if (data && data.ready) {
             currentSessionData = data;
             stateLoading.style.display = 'none';
-            metaBar.style.display = 'flex';
+            imageWrapper.style.display = 'flex';
             actionButtons.classList.add('visible');
-            sessionLabel.textContent = '#' + sessionId;
-            presetLabel.textContent = 'Màu: ' + ((data.metadata && data.metadata.preset) || 'Original');
+
+            if (data.metadata && data.metadata.preset && footerMeta) {
+              footerMeta.innerHTML = 'Phiên: <span id="session-foot">' + sessionId + '</span> • Preset: ' + data.metadata.preset;
+            }
 
             if (data.has_photo && data.photo_url) {
               imgPhoto.src = data.photo_url;
               btnDlPhoto.href = data.photo_download_url;
-              viewPhoto.classList.add('active');
+              imgPhoto.classList.add('active');
             }
             if (data.has_gif && data.gif_url) {
               imgGif.src = data.gif_url;
               btnDlGif.href = data.gif_download_url;
               btnDlGif.style.display = 'flex';
               mediaTabs.classList.add('visible');
+              if (params.get('tab') === 'gif') {
+                setActiveTab('gif');
+              }
             } else if (pollCount < 10) {
               pollCount++;
               setTimeout(checkGifUpdateSilently, 2000);
@@ -383,11 +700,11 @@
           pollCount++;
           if (pollCount <= 25) {
             loadingTitle.textContent = 'Đang đồng bộ ảnh từ buồng chụp...';
-            loadingDesc.textContent = 'Vui lòng giữ màn hình này trong giây lát (' + pollCount + '). Ảnh sẽ tự động hiển thị ngay khi tải xong.';
+            loadingDesc.textContent = 'Vui lòng giữ màn hình này trong giây lát (' + pollCount + ').';
             setTimeout(fetchSession, 1500);
           } else {
             loadingTitle.textContent = 'Chưa tìm thấy ảnh trên đám mây';
-            loadingDesc.textContent = 'Phiên chụp "' + sessionId + '" chưa được đồng bộ hoặc đã hết thời hạn lưu trữ.';
+            loadingDesc.textContent = 'Phiên chụp "' + sessionId + '" chưa được đồng bộ hoặc đã hết hạn lưu trữ.';
             document.querySelector('.spinner').style.display = 'none';
           }
         } catch (err) {
@@ -412,13 +729,14 @@
             btnDlGif.href = data.gif_download_url;
             btnDlGif.style.display = 'flex';
             mediaTabs.classList.add('visible');
+            if (params.get('tab') === 'gif') {
+              setActiveTab('gif');
+            }
           } else if (pollCount < 10) {
             pollCount++;
             setTimeout(checkGifUpdateSilently, 2000);
           }
-        } catch (_) {
-          // Ignore background poll error
-        }
+        } catch (_) {}
       }
 
       fetchSession();

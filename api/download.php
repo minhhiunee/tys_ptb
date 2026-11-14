@@ -58,7 +58,7 @@ if ($image) {
         header('Content-Type: ' . $contentType);
         header('Content-Length: ' . filesize($path));
         header('Content-Disposition: ' . ($forceDownload ? 'attachment' : 'inline') . '; filename="photobooth-' . $image . '"');
-        echo file_get_contents($path);
+        readfile($path);
     } catch (\Exception $e) {
         http_response_code(500);
         echo 'Error downloading the file ' . $image;

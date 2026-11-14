@@ -14,6 +14,9 @@ $action = $_REQUEST['action'] ?? 'summary';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     checkCsrfOrFail($_POST);
 
+    @set_time_limit(120);
+    @ignore_user_abort(true);
+
     if ($action === 'sync_session' && !empty($_POST['session_id'])) {
         $sessionId = trim((string) $_POST['session_id']);
         echo json_encode($syncService->syncSession($sessionId));

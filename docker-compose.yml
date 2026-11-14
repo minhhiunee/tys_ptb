@@ -27,6 +27,7 @@ services:
       - ./Frame:/app/Frame
       - ./welcome:/app/welcome
       - ./scripts:/app/scripts
+      - ./.htaccess:/app/.htaccess:ro
       - ./index.php:/app/index.php
       - ./view.php:/app/view.php
 

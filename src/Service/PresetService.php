@@ -65,7 +65,7 @@ class PresetService
         $presetDir = PathUtility::getAbsolutePath('PresetColor');
         $configMtime = file_exists($this->configFile) ? (int) @filemtime($this->configFile) : 0;
         $dirMtime = is_dir($presetDir) ? (int) @filemtime($presetDir) : 0;
-        if ($dirMtime >= $configMtime || empty($this->presets)) {
+        if ($dirMtime > $configMtime || empty($this->presets)) {
             $this->discoverPresetsFromDirectory();
             $this->ensureLutsExist();
         }
@@ -93,7 +93,7 @@ class PresetService
             }
 
             $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-            if ($ext !== 'xmp' && $ext !== 'cube') {
+            if ($ext !== 'xmp' && $ext !== 'cube' && $ext !== 'costyle') {
                 continue;
             }
 
@@ -119,16 +119,22 @@ class PresetService
                 $slug = 'preset-' . substr(md5($file), 0, 8);
             }
 
-            $xmpMeta = ($ext === 'xmp') ? $this->parseXmpFile($fullPath) : ['params' => [], 'exact' => [], 'approx' => [], 'unsupported' => []];
+            if ($ext === 'xmp') {
+                $xmpMeta = $this->parseXmpFile($fullPath);
+            } elseif ($ext === 'costyle') {
+                $xmpMeta = $this->parseCostyleFile($fullPath);
+            } else {
+                $xmpMeta = ['params' => [], 'exact' => [], 'approx' => [], 'unsupported' => []];
+            }
             $displayName = $xmpMeta['params']['_Name'] ?? self::formatTitle($baseNameNoExt);
             $lutRel = 'private/presets/' . $slug . '.png';
 
             $dto = new PresetDto();
             $dto->id = $slug;
             $dto->name = $displayName;
-            $dto->group = 'TYS TEST';
+            $dto->group = ($ext === 'costyle') ? 'CAPTURE ONE' : 'TYS TEST';
             $dto->version = '1.0';
-            $dto->format = 'xmp_lut';
+            $dto->format = ($ext === 'costyle') ? 'c1_costyle' : 'xmp_lut';
             $dto->sourceFile = $sourceRel;
             $dto->lutFile = $lutRel;
             $dto->supportsAmount = true;
@@ -206,9 +212,16 @@ class PresetService
             if ($preset->lutFile) {
                 $targetLut = PathUtility::getAbsolutePath($preset->lutFile);
                 if (!file_exists($targetLut)) {
-                    $sourceXmp = PathUtility::getAbsolutePath($preset->sourceFile);
-                    $xmpMeta = file_exists($sourceXmp) ? $this->parseXmpFile($sourceXmp) : ['params' => []];
-                    $this->bakeLutFromXmp($identityPath, $targetLut, $xmpMeta['params']);
+                    $sourceFile = PathUtility::getAbsolutePath($preset->sourceFile);
+                    $ext = strtolower((string) pathinfo($sourceFile, PATHINFO_EXTENSION));
+                    if ($ext === 'costyle' && file_exists($sourceFile)) {
+                        $meta = $this->parseCostyleFile($sourceFile);
+                    } elseif (file_exists($sourceFile)) {
+                        $meta = $this->parseXmpFile($sourceFile);
+                    } else {
+                        $meta = ['params' => []];
+                    }
+                    $this->bakeLutFromXmp($identityPath, $targetLut, $meta['params']);
                 }
             }
         }
@@ -369,6 +382,90 @@ class PresetService
     }
 
     /**
+     * Parse Capture One Style (.costyle) XML file and map its parameters to normalized grading parameters
+     */
+    public function parseCostyleFile(string $filePath): array
+    {
+        if (isset(self::$xmpCache[$filePath])) {
+            return self::$xmpCache[$filePath];
+        }
+
+        if (!file_exists($filePath)) {
+            return ['params' => [], 'exact' => [], 'approx' => [], 'unsupported' => []];
+        }
+
+        $content = file_get_contents($filePath);
+        if ($content === false) {
+            return ['params' => [], 'exact' => [], 'approx' => [], 'unsupported' => []];
+        }
+
+        $rawKv = [];
+        preg_match_all('/<E\s+K="([^"]+)"\s+V="([^"]*)"\s*\/?>/i', $content, $matches, PREG_SET_ORDER);
+        foreach ($matches as $m) {
+            $rawKv[$m[1]] = $m[2];
+        }
+
+        $params = [];
+        $exact = [];
+        $approx = [];
+        $unsupported = [];
+
+        if (!empty($rawKv['Name'])) {
+            $params['_Name'] = trim($rawKv['Name']);
+        }
+
+        // Map Capture One keys to unified grading parameters understood by bakeLutFromXmp & ColorPresetProcessor
+        $exposure = (float) ($rawKv['Exposure'] ?? 0.0);
+        $brightness = (float) ($rawKv['Brightness'] ?? 0.0);
+        $effectiveExposure = $exposure + ($brightness * 0.02);
+        if ($effectiveExposure !== 0.0) {
+            $val = sprintf('%+.2f', $effectiveExposure);
+            $params['Exposure2012'] = $val;
+            $exact['Exposure2012'] = $val;
+        }
+
+        if (isset($rawKv['Contrast'])) {
+            $params['Contrast2012'] = (string) $rawKv['Contrast'];
+            $exact['Contrast2012'] = (string) $rawKv['Contrast'];
+        }
+        if (isset($rawKv['Saturation'])) {
+            $params['Saturation'] = (string) $rawKv['Saturation'];
+            $exact['Saturation'] = (string) $rawKv['Saturation'];
+        }
+        if (isset($rawKv['HighlightRecovery'])) {
+            $params['Highlights2012'] = (string) (-1 * (float) $rawKv['HighlightRecovery']);
+            $approx['Highlights2012'] = $params['Highlights2012'];
+        }
+        if (isset($rawKv['ShadowRecovery'])) {
+            $params['Shadows2012'] = (string) $rawKv['ShadowRecovery'];
+            $approx['Shadows2012'] = (string) $rawKv['ShadowRecovery'];
+        }
+        if (isset($rawKv['Clarity'])) {
+            $params['Clarity2012'] = (string) $rawKv['Clarity'];
+            $approx['Clarity2012'] = (string) $rawKv['Clarity'];
+        }
+        if (isset($rawKv['BlackLevel'])) {
+            $params['Blacks2012'] = (string) $rawKv['BlackLevel'];
+            $approx['Blacks2012'] = (string) $rawKv['BlackLevel'];
+        }
+
+        foreach ($rawKv as $k => $v) {
+            if (!in_array($k, ['Name', 'Exposure', 'Brightness', 'Contrast', 'Saturation', 'HighlightRecovery', 'ShadowRecovery', 'Clarity', 'BlackLevel'], true)) {
+                $unsupported[$k] = $v;
+            }
+        }
+
+        self::$xmpCache[$filePath] = [
+            'params' => $params,
+            'exact' => $exact,
+            'approx' => $approx,
+            'unsupported' => $unsupported,
+        ];
+
+        return self::$xmpCache[$filePath];
+    }
+
+    /**
      * Slugify string with Vietnamese diacritics mapping
      */
     public static function slugify(string $text): string
@@ -447,7 +544,9 @@ class PresetService
         string $sourceImagePath,
         string $targetImagePath,
         string $presetId,
-        int $amount = 100
+        int $amount = 100,
+        ?string $frameOverlayPath = null,
+        int $jpegQuality = 95
     ): bool {
         if ($presetId === 'original' || $presetId === 'none' || $presetId === '') {
             return copy($sourceImagePath, $targetImagePath);
@@ -468,8 +567,15 @@ class PresetService
         } elseif (!empty($preset->exactParams) || !empty($preset->approximatedParams)) {
             $params = array_merge($preset->exactParams, $preset->approximatedParams);
         } else {
-            $xmpAbsolutePath = PathUtility::getAbsolutePath($preset->sourceFile);
-            $xmpMeta = file_exists($xmpAbsolutePath) ? $this->parseXmpFile($xmpAbsolutePath) : ['params' => []];
+            $sourceAbsolutePath = PathUtility::getAbsolutePath($preset->sourceFile);
+            $ext = strtolower((string) pathinfo($sourceAbsolutePath, PATHINFO_EXTENSION));
+            if ($ext === 'costyle' && file_exists($sourceAbsolutePath)) {
+                $xmpMeta = $this->parseCostyleFile($sourceAbsolutePath);
+            } elseif (file_exists($sourceAbsolutePath)) {
+                $xmpMeta = $this->parseXmpFile($sourceAbsolutePath);
+            } else {
+                $xmpMeta = ['params' => []];
+            }
             $params = $xmpMeta['params'];
         }
 
@@ -478,7 +584,9 @@ class PresetService
             $targetImagePath,
             $lutAbsolutePath,
             $params,
-            $amount
+            $amount,
+            $frameOverlayPath,
+            $jpegQuality
         );
     }
 

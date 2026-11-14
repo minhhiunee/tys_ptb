@@ -2,11 +2,29 @@
 
 declare(strict_types=1);
 
+use Photobooth\Service\AssetService;
+use Photobooth\Service\ColorWorkflowService;
 use Photobooth\Service\PresetService;
 
+// Mode 1 (default): base grade baked at capture => no preset controls on the result screen
+// Mode 2 (admin opt-in `color_workflow.interactive_presets`): guests pick preset + intensity here
+$interactivePresets = ColorWorkflowService::getInstance()->isInteractive();
 $presetService = PresetService::getInstance();
-$presets = $presetService->getEnabledPresets();
+$presets = $interactivePresets ? $presetService->getEnabledPresets() : [];
+$assetService = AssetService::getInstance();
+$evLogoUrl = $assetService->getUrl('resources/img/event/logo-96.png');
+$evChaoUrl = $assetService->getUrl('resources/img/event/chao-tsv-2026-light-sm.png');
+$evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
 ?>
+
+<!-- Result Screen Event Branding Pill (Logo + Chào Tân Sinh Viên 2026 + TRẠM TINH HÀ) -->
+<div class="result-event-brand" aria-label="Chào Tân Sinh Viên 2026 - TRẠM TINH HÀ">
+    <img src="<?= htmlspecialchars($evLogoUrl, ENT_QUOTES) ?>" alt="Logo" class="result-event-brand__logo">
+    <div class="result-event-brand__titles">
+        <img src="<?= htmlspecialchars($evChaoUrl, ENT_QUOTES) ?>" alt="CHÀO TÂN SINH VIÊN 2026" class="result-event-brand__chao">
+        <img src="<?= htmlspecialchars($evTitleUrl, ENT_QUOTES) ?>" alt="TRẠM TINH HÀ" class="result-event-brand__name">
+    </div>
+</div>
 
 <!-- Live Framed Time-Lapse GIF Overlay Viewer on Result Screen -->
 <div id="result-gif-viewer" class="result-gif-viewer hidden" aria-hidden="true">
@@ -21,8 +39,9 @@ $presets = $presetService->getEnabledPresets();
 </div>
 
 <!-- Studio Darkroom Loupe & Color Grading Deck (Mouse + Touch Ergonomic) -->
-<div id="desktop-preset-bar" class="desktop-preset-bar" role="region" aria-label="Bảng chỉnh màu và nhận ảnh">
+<div id="desktop-preset-bar" class="desktop-preset-bar" data-interactive-presets="<?= $interactivePresets ? '1' : '0' ?>" role="region" aria-label="Bảng chỉnh màu và nhận ảnh">
     <div class="preset-bar-inner">
+        <?php if ($interactivePresets): ?>
         <!-- Zone 1: Film Preset Strip (Horizontally scrollable via Touch swipe or Mouse wheel) -->
         <div class="preset-strip-wrapper">
             <span class="preset-group-label">
@@ -57,6 +76,7 @@ $presets = $presetService->getEnabledPresets();
                 <button type="button" id="btn-amount-inc" class="amount-step-btn" title="Tăng 10%" aria-label="Tăng độ đậm màu">+</button>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Zone 3: Loupe Inspection Controls (GIF Preview & Before/After Hold) -->
         <div class="preset-compare-container">
@@ -64,10 +84,12 @@ $presets = $presetService->getEnabledPresets();
                 <i class="fa fa-film" aria-hidden="true"></i>
                 <span>Xem GIF</span>
             </button>
+            <?php if ($interactivePresets): ?>
             <button type="button" id="btn-hold-compare" class="compare-btn" title="Nhấn giữ chuột hoặc chạm giữ để đối chiếu ảnh gốc (Phím tắt: \)">
                 <i class="fa fa-eye" aria-hidden="true"></i>
                 <span>Giữ xem gốc</span>
             </button>
+            <?php endif; ?>
             <span id="preset-status" class="preset-status-pill" aria-live="polite">Sẵn sàng</span>
         </div>
 
@@ -173,6 +195,14 @@ $presets = $presetService->getEnabledPresets();
                     <i class="fa fa-clock-o" aria-hidden="true"></i>
                     <span id="qr-countdown-val">45</span>s
                 </div>
+            </div>
+        </div>
+
+        <div class="qr-brand-strip" aria-hidden="true">
+            <img src="<?= htmlspecialchars($evLogoUrl, ENT_QUOTES) ?>" alt="" class="qr-brand-strip__logo">
+            <div class="qr-brand-strip__titles">
+                <img src="<?= htmlspecialchars($evChaoUrl, ENT_QUOTES) ?>" alt="CHÀO TÂN SINH VIÊN 2026" class="qr-brand-strip__chao">
+                <img src="<?= htmlspecialchars($evTitleUrl, ENT_QUOTES) ?>" alt="TRẠM TINH HÀ" class="qr-brand-strip__name">
             </div>
         </div>
 
@@ -283,32 +313,120 @@ $presets = $presetService->getEnabledPresets();
 
 <style>
 /* ==========================================================================
-   TYS Studio Loupe & Darkroom Token System (Mouse + Touch Ergonomic)
+   TRẠM TINH HÀ • Cosmic Starlight Darkroom & Loupe Deck
    ========================================================================== */
 :root {
-    --loupe-obsidian: #0D1015;
-    --loupe-surface: rgba(20, 24, 33, 0.94);
-    --loupe-elevated: #1D2330;
-    --loupe-border: rgba(243, 241, 236, 0.14);
-    --loupe-border-strong: rgba(243, 241, 236, 0.26);
-    --loupe-paper: #F5F2EB;
-    --loupe-text: #F3F1EC;
-    --loupe-muted: #9BA3B2;
-    --loupe-amber: #E59A3C;
-    --loupe-amber-Soft: rgba(229, 154, 60, 0.18);
-    --loupe-emerald: #1F9D6E;
-    --loupe-coral: #E05252;
+    --loupe-obsidian: #08051A;
+    --loupe-surface: rgba(16, 10, 44, 0.92);
+    --loupe-elevated: #1A1147;
+    --loupe-border: rgba(167, 139, 250, 0.24);
+    --loupe-border-strong: rgba(125, 211, 252, 0.42);
+    --loupe-paper: #F8FAFF;
+    --loupe-text: #F8FAFF;
+    --loupe-muted: #B6BCE0;
+    --loupe-amber: #38BDF8;
+    --loupe-amber-Soft: rgba(56, 189, 248, 0.18);
+    --loupe-emerald: #10B981;
+    --loupe-coral: #F43F5E;
     --loupe-font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --loupe-font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Consolas, monospace;
+}
+
+/* Result Screen Event Brand Pill */
+.result-event-brand {
+    display: none;
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 55;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 16px 6px 8px;
+    border-radius: 999px;
+    background: rgba(14, 9, 40, 0.8);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(167, 139, 250, 0.35);
+    box-shadow: 0 10px 28px rgba(4, 2, 18, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    pointer-events: none;
+}
+.stage[data-stage="result"].stage--active .result-event-brand {
+    display: inline-flex !important;
+}
+.result-event-brand__logo {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    padding: 2px;
+    object-fit: contain;
+    flex-shrink: 0;
+}
+.result-event-brand__titles {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+.result-event-brand__chao {
+    height: 10px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 6px rgba(196, 181, 253, 0.55));
+}
+.result-event-brand__name {
+    height: 17px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.55));
+}
+
+.qr-brand-strip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin: 0 auto 12px;
+    padding: 6px 14px 6px 8px;
+    border-radius: 999px;
+    background: rgba(25, 16, 68, 0.85);
+    border: 1px solid rgba(167, 139, 250, 0.32);
+}
+.qr-brand-strip__logo {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    padding: 2px;
+    object-fit: contain;
+}
+.qr-brand-strip__titles {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+.qr-brand-strip__chao {
+    height: 9.5px;
+    width: auto;
+    object-fit: contain;
+}
+.qr-brand-strip__name {
+    height: 16px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.5));
 }
 
 /* GIF Overlay Viewer */
 .result-gif-viewer {
     position: fixed;
-    top: 18px;
+    top: 66px;
     left: 50%;
     transform: translateX(-50%);
-    height: calc(100dvh - 175px);
+    height: calc(100dvh - 220px);
+    width: 92vw;
     max-width: 92vw;
     z-index: 45;
     display: flex;
@@ -324,13 +442,11 @@ $presets = $presetService->getEnabledPresets();
 .result-gif-viewer img {
     max-height: calc(100% - 48px);
     max-width: 100%;
-    width: auto;
-    height: auto;
+    width: 100%;
+    height: 100%;
     object-fit: contain;
     border-radius: 10px;
-    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75);
-    border: 2px solid var(--loupe-amber);
-    background: var(--loupe-obsidian);
+    filter: drop-shadow(0 24px 56px rgba(0, 0, 0, 0.85));
 }
 .result-gif-badge {
     background: var(--loupe-surface);
@@ -752,12 +868,12 @@ $presets = $presetService->getEnabledPresets();
     position: relative;
     max-width: 540px;
     width: 100%;
-    background: #141821;
+    background: linear-gradient(160deg, rgba(20, 12, 58, 0.96), rgba(9, 5, 28, 0.98));
     color: var(--loupe-text);
     border-radius: 22px;
     padding: 26px 26px 22px;
-    box-shadow: 0 28px 64px rgba(0, 0, 0, 0.72);
-    border: 1px solid var(--loupe-border-strong);
+    box-shadow: 0 28px 64px rgba(2, 1, 16, 0.85), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    border: 1.5px solid var(--loupe-border-strong);
     text-align: left;
     animation: loupeModalReveal 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }

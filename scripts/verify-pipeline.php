@@ -75,7 +75,17 @@ $results['stage3_gif'] = [
     'gif_encode_ms' => (int) round((microtime(true) - $t2) * 1000),
 ];
 
-// 4. Verify Offline-First Sync Queue (Stage 6)
+// 4. Verify Capture One Integration & Ingestion Self-Test (Stage 5)
+$c1Service = \Photobooth\Service\CaptureOneIntegrationService::getInstance();
+$c1SelfTest = $c1Service->runDiagnosticSelfTest();
+$results['stage5_capture_one'] = [
+    'passed' => !empty($c1SelfTest['passed']),
+    'idempotency_duplicate_skipped' => !empty($c1SelfTest['idempotency_duplicate_skipped']),
+    'discovered_styles_count' => count($c1Service->discoverAvailableStyles()),
+    'self_test_ms' => $c1SelfTest['total_self_test_ms'] ?? 0,
+];
+
+// 5. Verify Offline-First Sync Queue (Stage 6)
 $t3 = microtime(true);
 $syncService = SyncQueueService::getInstance();
 $queued = $syncService->enqueueSession('diag_test_session', [

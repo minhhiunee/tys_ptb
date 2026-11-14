@@ -133,6 +133,33 @@ $startpageTextPosition = StartpageTextPosition::resolve(
     $config['logo']['enabled'] ?? null
 );
 
+// Options for the base color preset used by the capture-time color workflow and Capture One default style
+$colorWorkflowPresetOptions = ['original' => 'original (no grading)'];
+foreach (\Photobooth\Service\PresetService::getInstance()->getEnabledPresets() as $colorWorkflowPreset) {
+    $colorWorkflowPresetOptions[$colorWorkflowPreset->id] = $colorWorkflowPreset->name . ' (' . $colorWorkflowPreset->format . ')';
+}
+$c1Diag = \Photobooth\Service\CaptureOneIntegrationService::getInstance()->getDiagnostics();
+$c1LastImg = $c1Diag['queue']['last_processed']['target_path'] ?? 'None';
+$c1LastSession = $c1Diag['queue']['last_processed']['session_id'] ?? '-';
+$c1Stats = $c1Diag['queue']['stats'] ?? [];
+$c1RecentErrCount = count($c1Diag['queue']['recent_errors'] ?? []);
+$c1LastErrText = $c1RecentErrCount > 0
+    ? ($c1Diag['queue']['recent_errors'][$c1RecentErrCount - 1]['message'] ?? '')
+    : 'No errors';
+$c1StatusNote = sprintf(
+    'Host Bridge: %s | Input Writable: %s | Output Writable: %s | Queue Pending: %d | Completed: %d (Fallback: %d, Avg: %sms) | Last Image: %s (Session: %s) | Last Error: %s',
+    !empty($c1Diag['host_bridge_alive']) ? 'ONLINE' : 'STANDBY (Auto-Fallback Ready)',
+    !empty($c1Diag['folders']['input_writable']) ? 'OK' : 'ERROR',
+    !empty($c1Diag['folders']['output_writable']) ? 'OK' : 'ERROR',
+    (int) ($c1Diag['queue']['pending_jobs'] ?? 0),
+    (int) ($c1Stats['completed_c1'] ?? 0),
+    (int) ($c1Stats['fallback_used'] ?? 0),
+    (string) ($c1Stats['avg_latency_ms'] ?? 0),
+    (string) $c1LastImg,
+    (string) $c1LastSession,
+    (string) $c1LastErrText
+);
+
 return [
     'general' => [
         'view' => 'basic',
@@ -3872,9 +3899,9 @@ return [
         ],
     ],
     'lightroom' => [
-        'view' => 'basic',
+        'view' => 'expert',
         'lightroom_enabled' => [
-            'view' => 'basic',
+            'view' => 'expert',
             'type' => 'checkbox',
             'name' => 'lightroom[enabled]',
             'value' => $config['lightroom']['enabled'],
@@ -3899,6 +3926,156 @@ return [
             'placeholder' => 'TYS TEST',
             'name' => 'lightroom[preset_folder]',
             'value' => $config['lightroom']['preset_folder'] ?? 'TYS TEST',
+        ],
+    ],
+    'capture_one' => [
+        'view' => 'basic',
+        'capture_one_enabled' => [
+            'view' => 'basic',
+            'type' => 'checkbox',
+            'name' => 'capture_one[enabled]',
+            'value' => $config['capture_one']['enabled'] ?? false,
+            'note' => $c1StatusNote,
+        ],
+        'capture_one_camera_mode' => [
+            'view' => 'basic',
+            'type' => 'select',
+            'name' => 'capture_one[camera_mode]',
+            'placeholder' => $defaultConfig['capture_one']['camera_mode'] ?? 'photobooth_owns_camera',
+            'options' => [
+                'photobooth_owns_camera' => 'Option B: Photobooth Owns Camera -> Capture One Hot Folder Bridge (Recommended)',
+                'capture_one_owns_camera' => 'Option A: Capture One Owns Camera (Direct USB Tethered Capture)',
+            ],
+            'value' => $config['capture_one']['camera_mode'] ?? 'photobooth_owns_camera',
+        ],
+        'capture_one_default_style' => [
+            'view' => 'basic',
+            'type' => 'select',
+            'name' => 'capture_one[default_style]',
+            'placeholder' => $defaultConfig['capture_one']['default_style'] ?? 'clean-portrait',
+            'options' => $colorWorkflowPresetOptions,
+            'value' => $config['capture_one']['default_style'] ?? 'clean-portrait',
+        ],
+        'capture_one_process_recipe' => [
+            'view' => 'basic',
+            'type' => 'input',
+            'placeholder' => 'Photobooth_JPEG_sRGB',
+            'name' => 'capture_one[process_recipe]',
+            'value' => $config['capture_one']['process_recipe'] ?? 'Photobooth_JPEG_sRGB',
+        ],
+        'capture_one_session_path' => [
+            'view' => 'basic',
+            'type' => 'input',
+            'placeholder' => 'data/c1_session/Photobooth.cosessiondb',
+            'name' => 'capture_one[session_path]',
+            'value' => $config['capture_one']['session_path'] ?? 'data/c1_session/Photobooth.cosessiondb',
+        ],
+        'capture_one_input_folder' => [
+            'view' => 'basic',
+            'type' => 'input',
+            'placeholder' => 'data/c1_input',
+            'name' => 'capture_one[input_folder]',
+            'value' => $config['capture_one']['input_folder'] ?? 'data/c1_input',
+        ],
+        'capture_one_output_folder' => [
+            'view' => 'basic',
+            'type' => 'input',
+            'placeholder' => 'data/c1_output',
+            'name' => 'capture_one[output_folder]',
+            'value' => $config['capture_one']['output_folder'] ?? 'data/c1_output',
+        ],
+        'capture_one_output_format' => [
+            'view' => 'basic',
+            'type' => 'select',
+            'name' => 'capture_one[output_format]',
+            'placeholder' => 'jpeg',
+            'options' => [
+                'jpeg' => 'JPEG (sRGB)',
+                'tiff' => 'TIFF (Auto-converts to JPEG on ingest)',
+            ],
+            'value' => $config['capture_one']['output_format'] ?? 'jpeg',
+        ],
+        'capture_one_jpeg_quality' => [
+            'view' => 'basic',
+            'type' => 'range',
+            'name' => 'capture_one[jpeg_quality]',
+            'placeholder' => $defaultConfig['capture_one']['jpeg_quality'] ?? 92,
+            'value' => $config['capture_one']['jpeg_quality'] ?? 92,
+            'range_min' => 50,
+            'range_max' => 100,
+            'range_step' => 2,
+            'unit' => 'empty',
+        ],
+        'capture_one_output_resolution' => [
+            'view' => 'advanced',
+            'type' => 'number',
+            'placeholder' => 2400,
+            'name' => 'capture_one[output_resolution]',
+            'value' => $config['capture_one']['output_resolution'] ?? 2400,
+        ],
+        'capture_one_processing_timeout' => [
+            'view' => 'advanced',
+            'type' => 'number',
+            'placeholder' => 25,
+            'name' => 'capture_one[processing_timeout]',
+            'value' => $config['capture_one']['processing_timeout'] ?? 25,
+        ],
+        'capture_one_stability_wait_ms' => [
+            'view' => 'expert',
+            'type' => 'number',
+            'placeholder' => 350,
+            'name' => 'capture_one[stability_wait_ms]',
+            'value' => $config['capture_one']['stability_wait_ms'] ?? 350,
+        ],
+        'capture_one_retry_count' => [
+            'view' => 'expert',
+            'type' => 'number',
+            'placeholder' => 2,
+            'name' => 'capture_one[retry_count]',
+            'value' => $config['capture_one']['retry_count'] ?? 2,
+        ],
+        'capture_one_fallback_to_local_preset' => [
+            'view' => 'basic',
+            'type' => 'checkbox',
+            'name' => 'capture_one[fallback_to_local_preset]',
+            'value' => $config['capture_one']['fallback_to_local_preset'] ?? true,
+        ],
+        'capture_one_executable_path' => [
+            'view' => 'advanced',
+            'type' => 'input',
+            'placeholder' => 'C:\\Program Files\\Capture One\\Capture One\\CaptureOne.exe',
+            'name' => 'capture_one[executable_path]',
+            'value' => $config['capture_one']['executable_path'] ?? 'C:\\Program Files\\Capture One\\Capture One\\CaptureOne.exe',
+        ],
+    ],
+    'color_workflow' => [
+        'view' => 'basic',
+        'color_workflow_interactive_presets' => [
+            'view' => 'basic',
+            'type' => 'checkbox',
+            'name' => 'color_workflow[interactive_presets]',
+            'value' => $config['color_workflow']['interactive_presets'] ?? false,
+            'note' => 'OFF (mặc định, Cách 1): ảnh được cân màu cơ bản ngay khi chụp xong, màn hình kết quả KHÔNG có nút chọn màu. ON (Cách 2): ảnh giữ nguyên gốc, khách chọn preset/độ đậm ở màn hình xem ảnh.',
+        ],
+        'color_workflow_base_preset' => [
+            'view' => 'basic',
+            'type' => 'select',
+            'name' => 'color_workflow[base_preset]',
+            'placeholder' => $defaultConfig['color_workflow']['base_preset'] ?? 'clean-portrait',
+            'options' => $colorWorkflowPresetOptions,
+            'value' => $config['color_workflow']['base_preset'] ?? 'clean-portrait',
+            'note' => 'Preset cân màu cơ bản áp dụng lúc chụp (chỉ dùng ở Cách 1). Chọn "original" để không cân màu.',
+        ],
+        'color_workflow_base_amount' => [
+            'view' => 'basic',
+            'type' => 'range',
+            'name' => 'color_workflow[base_amount]',
+            'placeholder' => $defaultConfig['color_workflow']['base_amount'] ?? 100,
+            'value' => $config['color_workflow']['base_amount'] ?? 100,
+            'range_min' => 0,
+            'range_max' => 100,
+            'range_step' => 5,
+            'unit' => 'empty',
         ],
     ],
     'reset' => [

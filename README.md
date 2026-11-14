@@ -8,13 +8,18 @@ Một hệ thống Photobooth web interface chuyên nghiệp, hiệu năng cao v
 
 Dự án đã được nâng cấp toàn diện từ nền tảng gốc sang hệ thống Photobooth hiện đại với các tính năng vượt trội:
 
-### 1. Hệ thống Preset màu Lightroom cục bộ (Local-first < 0.3s)
-* **Auto-discovery XMP/LUT:** Tự động phát hiện và nạp các file preset `.xmp`, `.cube`, `.dng` đặt trong thư mục `PresetColor/`.
-* **Nướng màu 3D HaldCLUT:** Tự động parse thông số Camera Raw (Exposure, Contrast, Saturation, Tone Curve, Split Toning...) và nướng thành ma trận màu HaldCLUT PNG chuẩn xác.
-* **Thanh trượt Amount (0% – 100%):** Cho phép khách điều chỉnh mượt mà cường độ màu sắc theo ý thích.
-* **So sánh Trước/Sau (Hold Before/After):** Nhấn giữ chuột/chạm nút hoặc phím tắt `\` để so sánh tức thì với ảnh gốc.
+### 1. Hệ thống Màu Studio Kép: Capture One Pro & HaldCLUT 3D LUT
+* **Tích hợp Capture One Pro (`CaptureOneIntegrationService` & `CaptureOneIngestionService`):**
+  * Thay thế hoàn toàn cơ chế gọi CLI Adobe Lightroom rời rạc bằng kiến trúc **External Image Processing Provider** dành cho **Capture One Pro**.
+  * Hỗ trợ 2 chế độ vận hành linh hoạt: `photobooth_owns_camera` (Hot Folder Bridge qua `scripts/c1-host-bridge.ps1`) và `capture_one_owns_camera` (USB Tethered trực tiếp Sony α6400 / ZV-E10 vào Capture One Session kèm Next Capture Adjustments).
+  * Chấm màu trên **từng pose riêng lẻ trước khi ghép Collage & PNG Frame**, khắc phục triệt để lỗi ám màu lên khung viền PNG của Lightroom cũ.
+  * Kiểm định độ ổn định file 4 bước (Size Stability Wait → File Lock & JPEG Header `0xFFD8` → MIME/EXIF → SHA-1 Idempotency) và **tự động Fallback** về `PresetService` cục bộ nếu Capture One quá thời gian chờ (`processing_timeout`).
+* **Auto-discovery `.costyle` / `.xmp` / `.cube` / `.dng`:** Tự động phát hiện và nạp cả **Capture One Style (`.costyle`)**, preset Lightroom (`.xmp`, `.dng`) và 3D LUT (`.cube`) đặt trong thư mục `PresetColor/`.
+* **Nướng màu 3D HaldCLUT (< 0.3s):** Tự động parse thông số màu (Exposure, Contrast, Saturation, Tone Curve, Split Toning, Color Balance...) và nướng thành ma trận màu HaldCLUT PNG chuẩn xác.
+* **Thanh trượt Amount (0% – 100%):** Cho phép khách điều chỉnh mượt mà cường độ màu sắc theo ý thích ở chế độ Darkroom Interactive.
+* **So sánh Trước/Sau (Hold Before/After):** Nhấn giữ chuột/chạm nút hoặc phím tắt `\` để so sánh tức thì với ảnh gốc (`raw_pose_*` chưa qua chấm màu).
 * **Bảo vệ màu viền khung Frame (`reapplyFrameOverlay`):** Đảm bảo khung viền PNG và logo thương hiệu **không bao giờ bị ám màu** khi khách áp preset lên ảnh.
-* **Lưu vết Metadata:** Ghi lại thông tin `preset` và `preset_amount` vào file `meta_{filename}.json` của từng ảnh để có thể tái tạo kết quả chính xác.
+* **Lưu vết Metadata:** Ghi lại thông tin `color_provider`, `preset` và `preset_amount` vào file `meta_{filename}.json` của từng ảnh để có thể tái tạo kết quả chính xác.
 
 ### 2. Tự động xuất ảnh động Animated GIF
 * **Tạo GIF tự động:** Ghép chuỗi các pose ảnh chụp trong phiên thành file `{session_id}.gif` chuyển động lặp vô hạn.
@@ -173,11 +178,25 @@ powershell -ExecutionPolicy Bypass -File .\scripts\detect-venue-network.ps1
 
 ---
 
-### 5. Kiểm Thử Toàn Trình Tự Động (Benchmark)
+### 5. Tích Hợp Capture One Pro (Studio Color Workflow)
 
-Chạy script kiểm thử tích hợp toàn trình (Mock Camera → Preset LUT → Animated GIF → Sync Queue) bên trong container:
+Khi vận hành ở chế độ Studio chuyên nghiệp với **Capture One Pro**:
+1. Bật `capture_one.enabled = true` trong Admin Panel (`http://localhost/admin` → **Capture One Pro**).
+2. Khởi chạy Host Bridge trên Windows (nếu dùng chế độ `photobooth_owns_camera` / Hot Folder):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\scripts\c1-host-bridge.ps1
+   ```
+3. Kiểm tra trạng thái kết nối, hàng đợi và tự kiểm định (Self-Test) tại: [http://localhost/api/captureOneStatus.php](http://localhost/api/captureOneStatus.php).
+
+Xem tài liệu kiến trúc và hướng dẫn cấu hình chi tiết cho Sony α6400 / ZV-E10 tại [docs/CAPTURE_ONE_INTEGRATION.md](file:///d:/CodingPro/photobooth-dev/docs/CAPTURE_ONE_INTEGRATION.md).
+
+---
+
+### 6. Kiểm Thử Toàn Trình Tự Động (Benchmark)
+
+Chạy script kiểm thử tích hợp toàn trình (Mock Camera → Preset LUT → Animated GIF → Sync Queue → Capture One Self-Test) bên trong container:
 ```bash
 docker compose exec photobooth php scripts/verify-pipeline.php
 ```
 
-Chi tiết kịch bản kiểm thử, sao lưu và khắc phục sự cố được hướng dẫn tại [DEPLOYMENT_AND_CHECKLIST.md](file:///d:/CodingPro/photobooth-dev/DEPLOYMENT_AND_CHECKLIST.md).
+Chi tiết kịch bản kiểm thử, sao lưu và khắc phục sự cố được hướng dẫn tại [DEPLOYMENT_AND_CHECKLIST.md](file:///d:/CodingPro/photobooth-dev/DEPLOYMENT_AND_CHECKLIST.md) và [docs/CAPTURE_ONE_INTEGRATION.md](file:///d:/CodingPro/photobooth-dev/docs/CAPTURE_ONE_INTEGRATION.md).

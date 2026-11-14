@@ -45,6 +45,7 @@ gulp.task('sass', async function () {
 
       const result = await compileAsync(inputPath, {
         loadPaths: [scssDir],
+        style: 'compressed',
       });
 
       await writeFile(outputPath, result.css);
@@ -63,6 +64,7 @@ gulp.task('tailwind-admin', async function () {
     const result = await compileAsync(inputPath, {
       loadPaths: ['./assets/sass'],
       importer: nodeSassImporter,
+      style: 'compressed',
     });
 
     const processedCss = await postcss([tailwindcss(twAdminConfig), autoprefixer()]).process(result.css, {

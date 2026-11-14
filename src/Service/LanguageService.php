@@ -5,16 +5,18 @@ namespace Photobooth\Service;
 use Photobooth\Enum\FolderEnum;
 use Photobooth\Logger\NamedLogger;
 use Photobooth\Utility\PathUtility;
-use Symfony\Component\Translation\MessageCatalogueInterface;
+use Photobooth\Utility\RuntimeCacheUtility;
 use Symfony\Component\Translation\Loader\JsonFileLoader;
 use Symfony\Component\Translation\Translator;
 
 class LanguageService
 {
     private string $locale;
-    private Translator $translator;
-    private ?MessageCatalogueInterface $catalogue = null;
-    private NamedLogger $logger;
+    /** @var array<string,string> */
+    private array $catalog = [];
+    /** @var array<string,int> */
+    private array $definedKeys = [];
+    private ?NamedLogger $logger = null;
     /** @var array<string,bool> */
     private array $missingLogged = [];
 
@@ -22,42 +24,61 @@ class LanguageService
     {
         $this->locale = ConfigurationService::getInstance()->getConfiguration()['ui']['language'];
 
+        $langDir = PathUtility::getAbsolutePath(FolderEnum::LANG->value);
+        $enFile = $langDir . DIRECTORY_SEPARATOR . 'en.json';
+        $localeFile = $langDir . DIRECTORY_SEPARATOR . $this->locale . '.json';
+
+        $enMtime = is_file($enFile) ? ((int) @filemtime($enFile) . ':' . (int) @filesize($enFile)) : '0:0';
+        $localeMtime = ($this->locale !== 'en' && is_file($localeFile))
+            ? ((int) @filemtime($localeFile) . ':' . (int) @filesize($localeFile))
+            : '0:0';
+        $fingerprint = $this->locale . '|' . $enMtime . '|' . $localeMtime . '|' . (int) @filemtime(__FILE__);
+        $cacheKey = 'lang_' . md5($this->locale . '|' . __DIR__);
+
+        $cached = RuntimeCacheUtility::get($cacheKey, $fingerprint, 'ser');
+        if (is_array($cached) && isset($cached['catalog'], $cached['definedKeys'])) {
+            $this->catalog = $cached['catalog'];
+            $this->definedKeys = $cached['definedKeys'];
+            return;
+        }
+
         $translator = new Translator($this->locale);
         $translator->setFallbackLocales(['en']);
         $translator->addLoader('json', new JsonFileLoader());
 
-        $path = PathUtility::getAbsolutePath(FolderEnum::LANG->value);
-        if (PathUtility::isAbsolutePath($path)) {
-            foreach (new \DirectoryIterator($path) as $file) {
-                if (!$file->isFile() || strtolower($file->getExtension()) !== 'json') {
-                    continue;
-                }
-                $translator->addResource('json', $path . '/' . $file->getFilename(), $file->getBasename('.' . $file->getExtension()), 'photobooth');
+        if (PathUtility::isAbsolutePath($langDir)) {
+            if (is_file($enFile)) {
+                $translator->addResource('json', $enFile, 'en', 'photobooth');
+            }
+            if ($this->locale !== 'en' && is_file($localeFile)) {
+                $translator->addResource('json', $localeFile, $this->locale, 'photobooth');
             }
         }
 
-        $this->translator = $translator;
-        $this->logger = LoggerService::getInstance()->getLogger('i18n');
+        $fallbackLang = $translator->getCatalogue('en')->all('photobooth');
+        $currentLang = $translator->getCatalogue($this->locale)->all('photobooth');
+        $this->catalog = array_replace($fallbackLang, $currentLang);
+        $this->definedKeys = array_flip(array_keys($currentLang));
 
-        // Only keep the catalogue cached when debug logging is enabled to avoid overhead in production
-        if ($this->logger->getLevel() >= 2) {
-            $this->catalogue = $translator->getCatalogue($this->locale);
-        }
+        RuntimeCacheUtility::set($cacheKey, $fingerprint, [
+            'catalog' => $this->catalog,
+            'definedKeys' => $this->definedKeys,
+        ], 'ser');
     }
 
     public function translate(string $id): string
     {
-        $translated = $this->translator->trans($id, [], 'photobooth');
+        $translated = $this->catalog[$id] ?? $id;
 
-        // Detect locale-specific misses even if a fallback string was returned
-        $isDefinedInLocale = $this->catalogue?->defines($id, 'photobooth') ?? true;
-
-        if (!$isDefinedInLocale && !isset($this->missingLogged[$id])) {
+        if (!isset($this->definedKeys[$id]) && !isset($this->missingLogged[$id])) {
             $this->missingLogged[$id] = true;
-            $this->logger->debug('Missing translation', [
-                'key'    => $id,
-                'locale' => $this->locale,
-            ]);
+            $this->logger ??= LoggerService::getInstance()->getLogger('i18n');
+            if ($this->logger->getLevel() >= 2) {
+                $this->logger->debug('Missing translation', [
+                    'key'    => $id,
+                    'locale' => $this->locale,
+                ]);
+            }
         }
 
         return $translated;
@@ -65,10 +86,7 @@ class LanguageService
 
     public function all(): array
     {
-        $fallbackLang = $this->translator->getCatalogue('en')->all('photobooth');
-        $currentLang = $this->translator->getCatalogue($this->locale)->all('photobooth');
-
-        return array_replace($fallbackLang, $currentLang);
+        return $this->catalog;
     }
 
     public static function getInstance(): self
