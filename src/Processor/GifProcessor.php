@@ -34,7 +34,7 @@ class GifProcessor
         array $layoutData,
         string $targetGifPath,
         int $delayMs = 210,
-        int $maxDimension = 720,
+        int $maxDimension = 480,
         ?string $presetId = null,
         int $presetAmount = 100,
         ?string $baseCollageImagePath = null
@@ -92,7 +92,7 @@ class GifProcessor
                 return false;
             }
 
-            $totalTicks = max(8, min(14, $maxSeqCount));
+            $totalTicks = max(5, min(8, $maxSeqCount));
             // Preserve ~2x playback speed when source sequence exceeds the 14-tick cap
             $effectiveDelayMs = ($maxSeqCount > $totalTicks && $totalTicks > 0)
                 ? min(500, (int) round($delayMs * ($maxSeqCount / $totalTicks)))
@@ -320,7 +320,7 @@ class GifProcessor
         array $sourceFrames,
         string $targetGifPath,
         int $delayMs = 210,
-        int $maxDimension = 720,
+        int $maxDimension = 480,
         ?string $presetId = null,
         int $presetAmount = 100
     ): bool {
@@ -537,8 +537,8 @@ class GifProcessor
             }
 
             $animation->setImageIterations(0); // Infinite loop
-            // Shared 128-color palette + delta layer optimization cuts GIF size 3x-6x and speeds Cloud upload
-            $animation->quantizeImages(128, \Imagick::COLORSPACE_RGB, 0, false, false);
+            // Shared 64-color palette + delta layer optimization cuts GIF size and speeds Cloud upload
+            $animation->quantizeImages(64, \Imagick::COLORSPACE_RGB, 0, false, false);
             $optimized = $animation->optimizeImageLayers();
             $result = $optimized->writeImages($targetGifPath, true);
 

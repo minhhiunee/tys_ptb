@@ -263,10 +263,10 @@ async function handleGetSession(sessionId, env, url) {
   let hasPhoto = Boolean(meta && meta.has_photo);
   let hasGif = Boolean(meta && meta.has_gif);
 
-  if (!meta) {
+  if (!hasPhoto || !hasGif) {
     const [photoHead, gifHead] = await Promise.all([
-      env.R2_BUCKET.head(`${prefix}/photo.jpg`),
-      env.R2_BUCKET.head(`${prefix}/anim.gif`),
+      hasPhoto ? true : env.R2_BUCKET.head(`${prefix}/photo.jpg`),
+      hasGif ? true : env.R2_BUCKET.head(`${prefix}/anim.gif`),
     ]);
     hasPhoto = Boolean(photoHead);
     hasGif = Boolean(gifHead);
@@ -599,6 +599,9 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       max-width: min(100%, 96vw) !important;
       max-height: min(100%, 88vh, calc(100dvh - 105px)) !important;
       object-fit: contain;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
       border-radius: 8px;
       filter: drop-shadow(0 16px 36px rgba(2, 1, 14, 0.92));
       transition: opacity 0.2s ease, filter 0.2s ease;
@@ -1058,7 +1061,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
               if (params.get('tab') === 'gif') {
                 setActiveTab('gif');
               }
-            } else if (pollCount < 10) {
+            } else if (pollCount < 30) {
               pollCount++;
               setTimeout(checkGifUpdateSilently, 2000);
             }
@@ -1099,7 +1102,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
             if (params.get('tab') === 'gif') {
               setActiveTab('gif');
             }
-          } else if (pollCount < 10) {
+          } else if (pollCount < 30) {
             pollCount++;
             setTimeout(checkGifUpdateSilently, 2000);
           }

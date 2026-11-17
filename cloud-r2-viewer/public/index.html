@@ -239,6 +239,9 @@
       max-width: min(100%, 96vw) !important;
       max-height: min(100%, 88vh, calc(100dvh - 105px)) !important;
       object-fit: contain;
+      border: none !important;
+      outline: none !important;
+      box-shadow: none !important;
       border-radius: 8px;
       filter: drop-shadow(0 16px 36px rgba(2, 1, 14, 0.92));
       transition: opacity 0.2s ease, filter 0.2s ease;
@@ -698,7 +701,7 @@
               if (params.get('tab') === 'gif') {
                 setActiveTab('gif');
               }
-            } else if (pollCount < 10) {
+            } else if (pollCount < 30) {
               pollCount++;
               setTimeout(checkGifUpdateSilently, 2000);
             }
@@ -739,7 +742,7 @@
             if (params.get('tab') === 'gif') {
               setActiveTab('gif');
             }
-          } else if (pollCount < 10) {
+          } else if (pollCount < 30) {
             pollCount++;
             setTimeout(checkGifUpdateSilently, 2000);
           }

@@ -1529,9 +1529,6 @@ const photoBooth = (function () {
         if (!config.gallery.enabled) {
             return;
         }
-        if (data && data.file && typeof window.triggerBackgroundCloudSync === 'function') {
-            window.triggerBackgroundCloudSync(data.session_id || data.file);
-        }
         const useThumb = config.gallery.use_thumb;
         const thumbImg = new Image();
         const bigImg = new Image();

@@ -107,6 +107,32 @@ def extract_cr3_jpeg(cr3_path, out_jpg_path):
         return True
     return False
 
+def find_photobooth_browser():
+    switch_to_default_desktop()
+    found = None
+    def enum_browser_cb(hwnd, lparam):
+        nonlocal found
+        if user32.IsWindowVisible(hwnd):
+            length = user32.GetWindowTextLengthW(hwnd)
+            buff = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buff, length + 1)
+            title = buff.value.lower()
+            if 'photobooth' in title and any(br in title for br in ['cốc cốc', 'chrome', 'edge', 'firefox', 'opera', 'brave', 'browser']):
+                found = hwnd
+                return 0
+        return 1
+    cb_proto = ctypes.WINFUNCTYPE(ctypes.c_int, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows(cb_proto(enum_browser_cb), 0)
+    return found
+
+def focus_browser(browser_hwnd=None):
+    if not browser_hwnd or not user32.IsWindow(browser_hwnd):
+        browser_hwnd = find_photobooth_browser()
+    if browser_hwnd and user32.IsWindow(browser_hwnd):
+        user32.keybd_event(0x12, 0, 0, 0) # Alt key down to unlock SetForegroundWindow
+        user32.SetForegroundWindow(browser_hwnd)
+        user32.keybd_event(0x12, 0, 2, 0) # Alt key up
+
 def trigger_capture_and_ingest(trigger_data, trigger_file):
     print(f"[C1 Companion] Trigger received for job: {trigger_data.get('job_id')}")
     switch_to_default_desktop()
@@ -117,17 +143,17 @@ def trigger_capture_and_ingest(trigger_data, trigger_file):
         print("[C1 Companion] Warning: Capture One window not found!")
         return False
 
+    # Remember the browser window running Photobooth so we can restore it immediately after trigger
+    browser_hwnd = find_photobooth_browser()
+
     # Snapshot existing files in Capture directory
     before_files = set(os.listdir(CAPTURE_DIR)) if os.path.exists(CAPTURE_DIR) else set()
     
     # Send Shutter trigger to Capture One
-    # Only restore window if it was minimized to taskbar (IsIconic).
-    # NEVER call SW_RESTORE (9) if it is already visible or fullscreen/maximized,
-    # because SW_RESTORE forces fullscreen/maximized windows to shrink back to a smaller floating window!
     if user32.IsIconic(target_hwnd):
         user32.ShowWindow(target_hwnd, 9)
     user32.SetForegroundWindow(target_hwnd)
-    time.sleep(0.12)
+    time.sleep(0.08)
     
     if wins.get('live_view'):
         # In Live View, Spacebar triggers capture
@@ -141,6 +167,9 @@ def trigger_capture_and_ingest(trigger_data, trigger_file):
         time.sleep(0.05)
         user32.keybd_event(VK_F7, 0, 2, 0)
         print("[C1 Companion] Sent F7 to Main window")
+
+    # Immediately restore the browser window so Live View never covers the Photobooth screen
+    focus_browser(browser_hwnd)
 
     # Wait for new file to arrive in Capture folder (up to 8s)
     new_capture_file = None
@@ -162,15 +191,15 @@ def trigger_capture_and_ingest(trigger_data, trigger_file):
 
     if not new_capture_file:
         print("[C1 Companion] Timeout: No new capture file received from Canon")
+        focus_browser(browser_hwnd)
         return False
 
     print(f"[C1 Companion] Captured file from Canon: {os.path.basename(new_capture_file)}")
     expected_filename = trigger_data.get("expected_filename", trigger_data.get("job_id") + ".jpg")
     dest_path = os.path.join(OUTPUT_DIR, expected_filename)
     
-    # Keep Live View window active & focused so fullscreen state is preserved uninterrupted
-    if wins.get('live_view'):
-        user32.SetForegroundWindow(wins['live_view'])
+    # Ensure Photobooth browser window remains on top
+    focus_browser(browser_hwnd)
 
     # Extract 6000x4000 full resolution JPEG immediately
     ext = os.path.splitext(new_capture_file)[1].lower()

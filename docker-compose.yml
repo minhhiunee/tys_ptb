@@ -14,6 +14,7 @@ services:
       - PHP_OPCACHE_REVALIDATE_FREQ=2
     volumes:
       - ./config/php-performance.ini:/usr/local/etc/php/conf.d/zz-photobooth-performance.ini:ro
+      - ./config/php-fpm-pool.conf:/usr/local/etc/php-fpm.d/zz-photobooth-pool.conf:ro
       - ./data:/app/data
       - ./var:/app/var
       - ./config:/app/config

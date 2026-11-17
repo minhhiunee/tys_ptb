@@ -73,7 +73,7 @@ try {
                                 $layoutData,
                                 $gifTargetPath,
                                 210,
-                                640
+                                360
                             );
                         }
                     }
@@ -97,7 +97,7 @@ try {
                             $poseAbsPaths,
                             $gifTargetPath,
                             210,
-                            640
+                            360
                         );
                     }
                 }

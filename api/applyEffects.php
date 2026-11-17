@@ -754,7 +754,7 @@ $logger->debug('effects applied', $data);
 echo json_encode($data);
 
 // Flush HTTP response immediately so UI proceeds with zero latency,
-// then immediately trigger asynchronous upload of photo & GIF to Cloudflare R2
+// while asynchronous companion GIF generation & Cloudflare R2 upload runs via detached background CLI runner
 if (!empty($vars['sessionId'])) {
     $runnerScript = PathUtility::getAbsolutePath('api/backgroundSyncRunner.php');
     $cmd = sprintf('php %s %s > /dev/null 2>&1 &', escapeshellarg($runnerScript), escapeshellarg((string) $vars['sessionId']));
@@ -763,10 +763,5 @@ if (!empty($vars['sessionId'])) {
 
 if (function_exists('fastcgi_finish_request')) {
     fastcgi_finish_request();
-    try {
-        \Photobooth\Service\SyncQueueService::getInstance()->syncSession($vars['sessionId']);
-    } catch (\Throwable $syncErr) {
-        $logger->warning('Post-capture immediate background sync failed: ' . $syncErr->getMessage());
-    }
 }
 exit();

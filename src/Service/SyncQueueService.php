@@ -339,6 +339,15 @@ class SyncQueueService
             return ['success' => false, 'error' => $item['last_error'], 'record' => $item];
         }
 
+        // Concurrency lock per session to prevent parallel syncs from choking bandwidth
+        $lockFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . 'sync_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $sessionId) . '.lock';
+        $lockFp = @fopen($lockFile, 'c+');
+        if ($lockFp && !@flock($lockFp, LOCK_EX | LOCK_NB)) {
+            @fclose($lockFp);
+            $this->logger->info("Session {$sessionId} is already being uploaded by another worker process, skipping duplicate run.");
+            return ['success' => true, 'status' => 'already_syncing', 'record' => $item];
+        }
+
         $item['attempts'] = ((int) ($item['attempts'] ?? 0)) + 1;
         $item['updated_at'] = time();
 
@@ -372,34 +381,123 @@ class SyncQueueService
             'metadata' => json_encode($item['metadata'] ?? [], JSON_UNESCAPED_UNICODE),
         ];
 
-        // Attach final photo (always compressed to fast mobile HD for instant 4G/Cloud R2 upload)
         $finalPath = $imagesDir . DIRECTORY_SEPARATOR . $finalFileName;
-        if (is_file($finalPath)) {
+        $photoFileMTime = is_file($finalPath) ? (int) @filemtime($finalPath) : 0;
+        $lastSyncedAt = (int) ($item['synced_at'] ?? 0);
+        $photoIsNewer = $photoFileMTime > ($lastSyncedAt + 2);
+        $needsPhotoUpload = is_file($finalPath) && (empty($item['synced_photo']) || $photoIsNewer);
+
+        $gifNeedsUpload = is_file($gifPath) && empty($item['synced_gif']);
+
+        // 1. Upload Final Photo first (if needed)
+        if ($needsPhotoUpload) {
             $uploadPath = $finalPath;
-            if ($autoCompress && filesize($finalPath) > 350 * 1024) {
-                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 1600, 84);
+            if ($autoCompress && filesize($finalPath) > 250 * 1024) {
+                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 1200, 80);
                 if ($tempCompressedFile !== null) {
                     $uploadPath = $tempCompressedFile;
                 }
             }
-            $postFields['final_photo'] = new \CURLFile($uploadPath, 'image/jpeg', $finalFileName);
+
+            $photoFields = [
+                'session_id' => $sessionId,
+                'environment' => $this->getEnvironmentProfile(),
+                'metadata' => json_encode($item['metadata'] ?? [], JSON_UNESCAPED_UNICODE),
+                'final_photo' => new \CURLFile($uploadPath, 'image/jpeg', $finalFileName),
+            ];
+
+            $res = $this->executeCloudPost($endpoint, $photoFields, $apiKey, $sessionId, 120);
+            if ($tempCompressedFile !== null && file_exists($tempCompressedFile)) {
+                @unlink($tempCompressedFile);
+            }
+
+            if (!$res['success']) {
+                if ($lockFp) {
+                    @flock($lockFp, LOCK_UN);
+                    @fclose($lockFp);
+                    @unlink($lockFile);
+                }
+                $item['status'] = 'retry_pending';
+                $item['last_error'] = $res['error'];
+                $queue[$sessionId] = $item;
+                $this->saveQueue($queue);
+                $this->logger->warning("Photo upload failed for session {$sessionId}: {$res['error']}");
+                return ['success' => false, 'error' => $res['error'], 'record' => $item];
+            }
+
+            $item['synced_photo'] = true;
+            if (!empty($res['data']['share_url'])) {
+                $item['remote_url'] = $res['data']['share_url'];
+            }
+            $queue[$sessionId] = $item;
+            $this->saveQueue($queue);
         }
 
-        // Attach animated GIF if available
-        if (is_file($gifPath)) {
-            $postFields['gif_photo'] = new \CURLFile($gifPath, 'image/gif', $gifFileName);
+        // 2. Upload Companion Animated GIF sequentially (if available)
+        if ($gifNeedsUpload) {
+            $gifFields = [
+                'session_id' => $sessionId,
+                'environment' => $this->getEnvironmentProfile(),
+                'metadata' => json_encode($item['metadata'] ?? [], JSON_UNESCAPED_UNICODE),
+                'gif_photo' => new \CURLFile($gifPath, 'image/gif', $gifFileName),
+            ];
+
+            $res = $this->executeCloudPost($endpoint, $gifFields, $apiKey, $sessionId, 180);
+            if (!$res['success']) {
+                if ($lockFp) {
+                    @flock($lockFp, LOCK_UN);
+                    @fclose($lockFp);
+                    @unlink($lockFile);
+                }
+                $item['status'] = 'retry_pending';
+                $item['last_error'] = $res['error'];
+                $queue[$sessionId] = $item;
+                $this->saveQueue($queue);
+                $this->logger->warning("GIF upload failed for session {$sessionId}: {$res['error']}");
+                return ['success' => false, 'error' => $res['error'], 'record' => $item];
+            }
+
+            $item['synced_gif'] = true;
+            if (!empty($res['data']['share_url'])) {
+                $item['remote_url'] = $res['data']['share_url'];
+            }
+            $queue[$sessionId] = $item;
+            $this->saveQueue($queue);
         }
 
+        if ($lockFp) {
+            @flock($lockFp, LOCK_UN);
+            @fclose($lockFp);
+            @unlink($lockFile);
+        }
+
+        $item['status'] = 'synced';
+        $item['synced_at'] = time();
+        $item['last_error'] = null;
+        $queue[$sessionId] = $item;
+        $this->saveQueue($queue);
+
+        $this->logger->info("Session synced successfully: {$sessionId}");
+        return ['success' => true, 'record' => $item];
+    }
+
+    /**
+     * Helper to execute a standalone HTTP/1.1 POST upload to Cloudflare R2 Worker
+     */
+    protected function executeCloudPost(string $endpoint, array $postFields, string $apiKey, string $sessionId, int $timeout = 120): array
+    {
         $ch = curl_init($endpoint);
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $postFields,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_TIMEOUT => 90,
+            CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_TIMEOUT => $timeout,
             CURLOPT_HTTPHEADER => [
                 'X-Photobooth-Api-Key: ' . $apiKey,
                 'X-Photobooth-Session: ' . $sessionId,
+                'Expect:',
             ],
         ]);
 
@@ -408,33 +506,15 @@ class SyncQueueService
         $curlError = curl_error($ch);
         curl_close($ch);
 
-        if ($tempCompressedFile !== null && file_exists($tempCompressedFile)) {
-            @unlink($tempCompressedFile);
-        }
-
         if ($responseBody !== false && $httpCode >= 200 && $httpCode < 300) {
             $decoded = json_decode((string) $responseBody, true);
             if (is_array($decoded) && !empty($decoded['confirmed']) && ($decoded['session_id'] ?? '') === $sessionId) {
-                $item['status'] = 'synced';
-                $item['synced_at'] = time();
-                $item['last_error'] = null;
-                $item['remote_url'] = $decoded['share_url'] ?? null;
-                $queue[$sessionId] = $item;
-                $this->saveQueue($queue);
-
-                $this->logger->info("Session synced successfully: {$sessionId}");
-                return ['success' => true, 'record' => $item];
+                return ['success' => true, 'data' => $decoded];
             }
         }
 
         $err = $curlError !== '' ? $curlError : "Remote server returned HTTP {$httpCode}";
-        $item['status'] = 'retry_pending';
-        $item['last_error'] = $err;
-        $queue[$sessionId] = $item;
-        $this->saveQueue($queue);
-
-        $this->logger->warning("Sync failed for session {$sessionId} (attempt {$item['attempts']}): {$err}");
-        return ['success' => false, 'error' => $err, 'record' => $item];
+        return ['success' => false, 'error' => $err];
     }
 
     /**
@@ -557,14 +637,14 @@ class SyncQueueService
     /**
      * Create an optimized Full-HD JPEG copy for rapid Cloud upload without modifying the local print file
      */
-    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1600, int $quality = 84): ?string
+    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1200, int $quality = 80): ?string
     {
         $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_cloud_' . uniqid('', true) . '.jpg';
         if (extension_loaded('imagick')) {
             try {
                 $im = new \Imagick($sourcePath);
                 if ($im->getImageWidth() > $maxDim || $im->getImageHeight() > $maxDim) {
-                    $im->thumbnailImage($maxDim, $maxDim, true, true);
+                    $im->thumbnailImage($maxDim, $maxDim, true, false);
                 }
                 $im->stripImage();
                 $im->setImageFormat('jpeg');
