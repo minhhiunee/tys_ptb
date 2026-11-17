@@ -54,6 +54,78 @@ foreach ($paths as $path) {
     }
 }
 
+// Sub-file (pose) specific cleanup (e.g. retake of pose 0: 20261116_111941-0.jpg)
+$subSessionId = null;
+$subPoseIdx = null;
+if (preg_match('/^([a-zA-Z0-9_]+)-(\d+)$/', $fileBaseName, $subMatch)) {
+    $subSessionId = $subMatch[1];
+    $subPoseIdx = (int) $subMatch[2];
+    $subPoseNum = $subPoseIdx + 1;
+
+    // Clean up temporary raw ungraded backups
+    $staleRawTemps = [
+        FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('raw_ungraded_%s_p%02d.jpg', $subSessionId, $subPoseIdx),
+        FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('raw_ungraded_%s_p%d.jpg', $subSessionId, $subPoseIdx),
+    ];
+    foreach ($staleRawTemps as $staleRaw) {
+        if (is_file($staleRaw)) {
+            @unlink($staleRaw);
+        }
+    }
+
+    // Clean up saved original poses in images/
+    $staleSavedPoses = [
+        FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . sprintf('orig_pose_%d_%s.jpg', $subPoseNum, $subSessionId),
+        FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . sprintf('raw_pose_%d_%s.jpg', $subPoseNum, $subSessionId),
+    ];
+    foreach ($staleSavedPoses as $staleSaved) {
+        if (is_file($staleSaved)) {
+            @unlink($staleSaved);
+        }
+    }
+
+    // Clean up time-lapse frames recorded for this specific pose
+    $tlMatches = glob(FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('tl_%s_p%02d_*.jpg', $subSessionId, $subPoseIdx)) ?: [];
+    foreach ($tlMatches as $tlFile) {
+        if (is_file($tlFile)) {
+            @unlink($tlFile);
+        }
+    }
+
+    // Clean up Capture One integration staging & queue for this pose
+    try {
+        $c1Service = \Photobooth\Service\CaptureOneIntegrationService::getInstance();
+        $c1JobId = sprintf('c1_%s_p%02d', $subSessionId, $subPoseIdx);
+        $c1Files = [
+            $c1Service->getInputFolderAbsolute() . DIRECTORY_SEPARATOR . $c1JobId . '.jpg',
+            $c1Service->getInputFolderAbsolute() . DIRECTORY_SEPARATOR . $c1JobId . '.trigger.json',
+            $c1Service->getInputFolderAbsolute() . DIRECTORY_SEPARATOR . $c1JobId . '.job.json',
+            $c1Service->getOutputFolderAbsolute() . DIRECTORY_SEPARATOR . $c1JobId . '.jpg',
+            $c1Service->getOutputFolderAbsolute() . DIRECTORY_SEPARATOR . $c1JobId . '.done.json',
+        ];
+        foreach ($c1Files as $c1f) {
+            if (is_file($c1f)) {
+                @unlink($c1f);
+            }
+        }
+        $queue = $c1Service->loadQueueData();
+        if (isset($queue['jobs'][$c1JobId])) {
+            unset($queue['jobs'][$c1JobId]);
+        }
+        if (isset($queue['processed_hashes']) && is_array($queue['processed_hashes'])) {
+            $prefix = $subSessionId . ':p' . $subPoseIdx . ':';
+            foreach (array_keys($queue['processed_hashes']) as $hKey) {
+                if (str_starts_with($hKey, $prefix)) {
+                    unset($queue['processed_hashes'][$hKey]);
+                }
+            }
+        }
+        $c1Service->saveQueueData($queue);
+    } catch (\Throwable $c1Err) {
+        $logger->debug('Capture One cleanup on retake ignored: ' . $c1Err->getMessage());
+    }
+}
+
 $filesToDelete = array_values(array_unique($filesToDelete));
 
 $logData = [

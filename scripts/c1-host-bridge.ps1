@@ -53,9 +53,17 @@ function Update-Heartbeat {
 Write-Host "[CaptureOne Host Bridge] Watching $AbsInput -> $AbsOutput (Simulate=$SimulateExport)" -ForegroundColor Cyan
 
 $iteration = 0
+$wsh = $null
+try {
+    $wsh = New-Object -ComObject Wscript.Shell
+} catch {}
+
 do {
     $iteration++
     Update-Heartbeat
+
+    $c1Proc = Get-Process -Name "CaptureOne" -ErrorAction SilentlyContinue
+    $c1Running = [bool]($null -ne $c1Proc)
 
     $jobs = Get-ChildItem -Path $AbsInput -Filter "*.job.json" -File
     foreach ($jobFile in $jobs) {
@@ -67,16 +75,55 @@ do {
             $destImg = Join-Path $AbsOutput $job.expected_filename
 
             if ((Test-Path $srcImg) -and -not (Test-Path $destImg)) {
-                if ($SimulateExport -or -not (Test-Path $CaptureOneExe)) {
-                    # Atomic write via temp file so IngestionService file stability check passes cleanly
+                if ($SimulateExport -or -not $c1Running -or -not (Test-Path $CaptureOneExe)) {
+                    # Capture One is not running or simulate mode: copy directly to output immediately
                     $tmpDest = "$destImg.writing.tmp"
                     Copy-Item -Path $srcImg -Destination $tmpDest -Force
                     Move-Item -Path $tmpDest -Destination $destImg -Force
                     Remove-Item -Path $jobFile.FullName -Force
+                    Write-Host "[Host Bridge] Immediate fallback copy to output: $($job.expected_filename)" -ForegroundColor Yellow
                 } else {
-                    # Forward into Capture One Session Hot Folder
-                    $c1HotTarget = Join-Path $AbsSessionCapture $job.expected_filename
-                    Copy-Item -Path $srcImg -Destination $c1HotTarget -Force
+                    # Capture One is running: Forward into Capture One Session Hot Folder
+                    $c1HotTargets = @($AbsSessionCapture)
+                    $nestedCapture = Join-Path $RepoRoot "data/c1_session/Photobooth/Capture"
+                    if (Test-Path $nestedCapture) {
+                        $c1HotTargets += $nestedCapture
+                    }
+                    foreach ($hotTarget in $c1HotTargets) {
+                        $c1HotFile = Join-Path $hotTarget $job.expected_filename
+                        Copy-Item -Path $srcImg -Destination $c1HotFile -Force
+                    }
+                    Write-Host "[Host Bridge] Forwarded to C1 Hot Folder: $($job.expected_filename)" -ForegroundColor Green
+
+                    # Trigger Capture One Export via Ctrl+D
+                    try {
+                        if ($wsh) {
+                            $activated = $wsh.AppActivate("Capture One")
+                            if ($activated) {
+                                Start-Sleep -Milliseconds 250
+                                $wsh.SendKeys("^d")
+                            }
+                        }
+                    } catch {}
+
+                    # Wait up to 5 seconds for Capture One to export to data/c1_output
+                    $exported = $false
+                    for ($s = 0; $s -lt 25; $s++) {
+                        Start-Sleep -Milliseconds 200
+                        if (Test-Path $destImg) {
+                            $exported = $true
+                            break
+                        }
+                    }
+
+                    # If Capture One did not export within 5 seconds, copy as fallback so Photobooth never hangs
+                    if (-not $exported -and -not (Test-Path $destImg)) {
+                        $tmpDest = "$destImg.writing.tmp"
+                        Copy-Item -Path $srcImg -Destination $tmpDest -Force
+                        Move-Item -Path $tmpDest -Destination $destImg -Force
+                        Write-Host "[Host Bridge] C1 export timeout fallback copy: $($job.expected_filename)" -ForegroundColor Yellow
+                    }
+
                     Remove-Item -Path $jobFile.FullName -Force
                 }
             }

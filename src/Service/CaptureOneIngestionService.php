@@ -214,8 +214,7 @@ class CaptureOneIngestionService
             ];
         }
 
-        // 4. Match against pending jobs by target_basename or oldest pending tethered job
-        $oldestPending = null;
+        // 4. Match against pending jobs by expected_filename
         foreach ($jobs as $jobId => $job) {
             if (($job['status'] ?? '') !== 'pending') {
                 continue;
@@ -228,22 +227,12 @@ class CaptureOneIngestionService
                     'pose_index' => (int) ($job['pose_index'] ?? 0),
                 ];
             }
-            if ($oldestPending === null || ($job['created_at_ms'] ?? PHP_INT_MAX) < ($oldestPending['created_at_ms'] ?? PHP_INT_MAX)) {
-                $oldestPending = $job + ['_job_id' => (string) $jobId];
-            }
         }
 
-        if ($oldestPending !== null) {
-            return [
-                'job_id' => (string) $oldestPending['_job_id'],
-                'session_id' => (string) ($oldestPending['session_id'] ?? ''),
-                'pose_index' => (int) ($oldestPending['pose_index'] ?? 0),
-            ];
-        }
-
+        // Do not match arbitrary un-associated files (e.g. Capture One recipe exports like "Photobooth 00043.jpg")
         return [
             'job_id' => null,
-            'session_id' => $cleanBase,
+            'session_id' => null,
             'pose_index' => 0,
         ];
     }

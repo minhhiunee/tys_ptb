@@ -230,10 +230,31 @@ class CaptureOneIntegrationService
             'updated_at' => time(),
         ];
 
+        // Clear any stale output or trigger files from previous captures/retakes for this job
+        $staleOutput = $outputDir . DIRECTORY_SEPARATOR . $inputFileName;
+        if (is_file($staleOutput)) {
+            @unlink($staleOutput);
+        }
+        $staleDone = $outputDir . DIRECTORY_SEPARATOR . $jobId . '.done.json';
+        if (is_file($staleDone)) {
+            @unlink($staleDone);
+        }
+        $staleTrigger = $inputDir . DIRECTORY_SEPARATOR . $jobId . '.trigger.json';
+        if (is_file($staleTrigger)) {
+            @unlink($staleTrigger);
+        }
+
         $this->upsertJob($jobId, $jobRecord);
 
-        // In photobooth_owns_camera mode, drop the captured file + manifest into data/c1_input/
-        if ($this->getCameraMode() === 'photobooth_owns_camera' && is_file($poseFilePath)) {
+        // In capture_one_owns_camera mode, write a trigger manifest so host companion fires the camera shutter
+        if ($this->getCameraMode() === 'capture_one_owns_camera') {
+            $triggerManifestPath = $inputDir . DIRECTORY_SEPARATOR . $jobId . '.trigger.json';
+            @file_put_contents(
+                $triggerManifestPath,
+                json_encode($jobRecord, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+            );
+        } elseif ($this->getCameraMode() === 'photobooth_owns_camera' && is_file($poseFilePath)) {
+            // In photobooth_owns_camera mode, drop the captured file + manifest into data/c1_input/
             @copy($poseFilePath, $inputFilePath);
             @file_put_contents(
                 $jobManifestPath,
@@ -279,8 +300,7 @@ class CaptureOneIntegrationService
             }
         }
 
-        // Timeout or Host Bridge offline: clean up pending input artifacts
-        @unlink($inputFilePath);
+        // Timeout or Host Bridge offline: clean up manifest but keep input image for audit/inspection
         @unlink($jobManifestPath);
 
         $errMsg = sprintf(
@@ -405,6 +425,24 @@ class CaptureOneIntegrationService
             $jobId = $assoc['job_id'];
             $sessionId = (string) ($assoc['session_id'] ?? 'unknown');
             $poseIndex = (int) ($assoc['pose_index'] ?? 0);
+
+            // Skip and clean un-associated external files (e.g. Capture One recipe background exports like "Photobooth 00043.jpg")
+            if ($jobId === null && empty($assoc['session_id'])) {
+                $this->logger->debug("Cleaning unassociated output file: {$entry}");
+                @unlink($fullPath);
+                continue;
+            }
+
+            // Stale file check: if this file was created before the active job was queued, it belongs to an old capture
+            if ($jobId !== null && isset($jobs[$jobId]['created_at'])) {
+                $jobCreatedAt = (int) $jobs[$jobId]['created_at'];
+                $fileMtime = @filemtime($fullPath);
+                if ($jobCreatedAt > 0 && $fileMtime !== false && $fileMtime < ($jobCreatedAt - 1)) {
+                    $this->logger->warning("Skipping and unlinking stale file {$entry} (mtime={$fileMtime} < job_created={$jobCreatedAt})");
+                    @unlink($fullPath);
+                    continue;
+                }
+            }
 
             // Idempotency key: prevent the exact same export for the same session/pose from being ingested twice
             $idempotencyKey = $sessionId . ':p' . $poseIndex . ':' . $sha1;

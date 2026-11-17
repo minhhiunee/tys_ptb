@@ -4,12 +4,12 @@
 /* global createScreensaver */
 const photoBooth = (function () {
     const PhotoStyle = {
-            PHOTO: 'photo',
-            COLLAGE: 'collage',
-            CHROMA: 'chroma',
-            VIDEO: 'video',
-            CUSTOM: 'custom'
-        },
+        PHOTO: 'photo',
+        COLLAGE: 'collage',
+        CHROMA: 'chroma',
+        VIDEO: 'video',
+        CUSTOM: 'custom'
+    },
         CameraDisplayMode = {
             INIT: 1,
             BACKGROUND: 2,
@@ -209,7 +209,7 @@ const photoBooth = (function () {
         frames: [],
         timer: null,
         canvas: null,
-        maxFramesPerPose: 26,
+        maxFramesPerPose: 16,
         intervalMs: 420,
         captureFrame: () => {
             try {
@@ -223,15 +223,17 @@ const photoBooth = (function () {
                 if (!api.timelapse.canvas) {
                     api.timelapse.canvas = document.createElement('canvas');
                 }
-                const maxDim = 540;
+                const maxDim = 480;
                 const scale = Math.min(1, maxDim / Math.max(videoEl.videoWidth, videoEl.videoHeight));
                 const w = Math.max(1, Math.round(videoEl.videoWidth * scale));
                 const h = Math.max(1, Math.round(videoEl.videoHeight * scale));
                 api.timelapse.canvas.width = w;
                 api.timelapse.canvas.height = h;
                 const ctx = api.timelapse.canvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(videoEl, 0, 0, w, h);
-                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.78);
+                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.88);
                 if (dataUrl && dataUrl.indexOf('data:image/jpeg') === 0) {
                     api.timelapse.frames.push(dataUrl);
                 }
@@ -275,7 +277,10 @@ const photoBooth = (function () {
             if (photoboothPreview.stream && previewVideo.get(0) && previewVideo.get(0).videoWidth > 0) {
                 videoSensor.get(0).width = previewVideo.get(0).videoWidth;
                 videoSensor.get(0).height = previewVideo.get(0).videoHeight;
-                videoSensor.get(0).getContext('2d').drawImage(previewVideo.get(0), 0, 0);
+                const sensorCtx = videoSensor.get(0).getContext('2d');
+                sensorCtx.imageSmoothingEnabled = true;
+                sensorCtx.imageSmoothingQuality = 'high';
+                sensorCtx.drawImage(previewVideo.get(0), 0, 0);
                 api.hasLiveCanvasCapture = true;
             }
         }
@@ -589,7 +594,7 @@ const photoBooth = (function () {
                 api.shellCommand('pre-command');
             }
 
-            if (currentCollageFile && api.nextCollageNumber) {
+            if (currentCollageFile && typeof api.nextCollageNumber === 'number') {
                 photoStyle = PhotoStyle.COLLAGE;
             }
 
@@ -705,7 +710,7 @@ const photoBooth = (function () {
                 style: api.photoStyle
             };
             if (api.hasLiveCanvasCapture) {
-                data.canvasimg = videoSensor.get(0).toDataURL('image/jpeg', 0.95);
+                data.canvasimg = videoSensor.get(0).toDataURL('image/jpeg', 0.98);
             }
             if (api.timelapse.frames && api.timelapse.frames.length > 0) {
                 data.timelapseFrames = JSON.stringify(api.timelapse.frames);
@@ -787,11 +792,12 @@ const photoBooth = (function () {
                         let imageUrl = environment.publicFolders.tmp + '/' + result.collage_file;
                         const preloadImage = new Image();
                         const picdate = Date.now().toString();
+                        const cacheBustCollageUrl = `${imageUrl}?filter=${imgFilter}&v=${picdate}`;
                         preloadImage.onload = () => {
                             loaderImage.attr('data-img', picdate);
-                            loaderImage.css('background-image', `url(${imageUrl}?filter=${imgFilter}&v=${picdate})`);
+                            loaderImage.css('background-image', `url(${cacheBustCollageUrl})`);
                         };
-                        preloadImage.src = imageUrl;
+                        preloadImage.src = cacheBustCollageUrl;
 
                         loaderImage.show();
 
@@ -824,11 +830,11 @@ const photoBooth = (function () {
 
                             loaderMessage.html(
                                 '<div style="background:rgba(15,23,42,0.85); backdrop-filter:blur(10px); padding:8px 22px; border-radius:30px; display:inline-block; margin-bottom:12px; color:#ffffff; font-weight:700; font-size:15px; border:1px solid rgba(255,255,255,0.2); box-shadow:0 6px 20px rgba(0,0,0,0.4);">' +
-                                    '<i class="fa fa-camera" style="margin-right:6px; color:#38bdf8;"></i> Kiểu ' +
-                                    currentIdx +
-                                    ' / ' +
-                                    totalLimit +
-                                    ': Xem lại ảnh vừa chụp</div>'
+                                '<i class="fa fa-camera" style="margin-right:6px; color:#38bdf8;"></i> Kiểu ' +
+                                currentIdx +
+                                ' / ' +
+                                totalLimit +
+                                ': Xem lại ảnh vừa chụp</div>'
                             );
 
                             loaderButtonBar.empty().css({
@@ -851,11 +857,12 @@ const photoBooth = (function () {
                                 loaderButtonBar.empty();
                                 imageUrl = '';
                                 api.clearLoaderImage();
+                                loaderImage.css({ display: 'none', 'background-image': 'none' });
                                 photoboothTools.overlay.close();
                                 loaderMessage.html(
                                     '<div style="color:#f8fafc; font-weight:600;"><i class="fa fa-spinner fa-spin"></i> Đang chuẩn bị chụp lại kiểu ' +
-                                        currentIdx +
-                                        '...</div>'
+                                    currentIdx +
+                                    '...</div>'
                                 );
 
                                 api.takingPic = false;
@@ -957,9 +964,9 @@ const photoBooth = (function () {
                     if (config.picture.retry_on_error > 0 && retry < config.picture.retry_on_error) {
                         photoboothTools.console.logDev(
                             'ERROR: Taking picture failed. Retrying. Retry: ' +
-                                retry +
-                                ' / ' +
-                                config.picture.retry_on_error
+                            retry +
+                            ' / ' +
+                            config.picture.retry_on_error
                         );
                         api.retryTakePic(retry);
                     } else {
@@ -1088,11 +1095,11 @@ const photoBooth = (function () {
         setFiltersEnabled(false);
         loaderMessage.html(
             '<i class="' +
-                config.icons.spinner +
-                '"></i><br>' +
-                (api.photoStyle === PhotoStyle.COLLAGE
-                    ? photoboothTools.getTranslation('busyCollage')
-                    : photoboothTools.getTranslation('busy'))
+            config.icons.spinner +
+            '"></i><br>' +
+            (api.photoStyle === PhotoStyle.COLLAGE
+                ? photoboothTools.getTranslation('busyCollage')
+                : photoboothTools.getTranslation('busy'))
         );
 
         if (
@@ -1100,12 +1107,13 @@ const photoBooth = (function () {
             config.picture.preview_before_processing
         ) {
             const tempImageUrl = environment.publicFolders.tmp + '/' + result.file;
+            const tempCacheBust = `${tempImageUrl}?v=${Date.now()}`;
             const preloadImage = new Image();
             preloadImage.onload = () => {
-                loader.css('background-image', `url(${tempImageUrl})`);
+                loader.css('background-image', `url(${tempCacheBust})`);
                 loader.addClass('showBackgroundImage');
             };
-            preloadImage.src = tempImageUrl;
+            preloadImage.src = tempCacheBust;
         }
 
         photoboothTools
@@ -1142,6 +1150,11 @@ const photoBooth = (function () {
                         api.renderChroma(data.file);
                     } else {
                         api.renderPic(data.file, data.images);
+                    }
+
+                    // Trigger immediate background sync to Cloud R2
+                    if (data && data.file && typeof window.triggerBackgroundCloudSync === 'function') {
+                        window.triggerBackgroundCloudSync(data.session_id || data.file);
                     }
                 } catch (error) {
                     photoboothTools.console.log('processPic.success: unexpected error:', error);
@@ -1417,8 +1430,8 @@ const photoBooth = (function () {
                 const really = config.delete.no_request
                     ? true
                     : await photoboothTools.confirm(
-                          filename + ' ' + photoboothTools.getTranslation('really_delete_image')
-                      );
+                        filename + ' ' + photoboothTools.getTranslation('really_delete_image')
+                    );
                 if (really) {
                     files.forEach(function (file, index, array) {
                         photoboothTools.console.logDev('Index:', index);
@@ -1445,13 +1458,14 @@ const photoBooth = (function () {
         const imageUrl = photoboothTools.isVideoFile(filename)
             ? environment.publicFolders.api + '/qrcode.php?filename=' + filename
             : environment.publicFolders.images + '/' + filename;
+        const cacheBustRenderUrl = `${imageUrl}?filter=${imgFilter}&v=${renderTs}`;
 
         const preloadImage = new Image();
         preloadImage.onload = () => {
             startPage.removeClass('stage--active');
 
             resultPage.css({
-                '--stage-background-image': `url(${imageUrl}?filter=${imgFilter}&v=${renderTs})`
+                '--stage-background-image': `url(${cacheBustRenderUrl})`
             });
             resultPage.attr('data-img', filename);
             resultPage.addClass('stage--active');
@@ -1491,7 +1505,7 @@ const photoBooth = (function () {
             }
         };
 
-        preloadImage.src = imageUrl;
+        preloadImage.src = cacheBustRenderUrl;
 
         api.takingPic = false;
         remoteBuzzerClient.inProgress(false);
@@ -1514,6 +1528,9 @@ const photoBooth = (function () {
     api.addImage = function (imageName) {
         if (!config.gallery.enabled) {
             return;
+        }
+        if (data && data.file && typeof window.triggerBackgroundCloudSync === 'function') {
+            window.triggerBackgroundCloudSync(data.session_id || data.file);
         }
         const useThumb = config.gallery.use_thumb;
         const thumbImg = new Image();

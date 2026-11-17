@@ -565,8 +565,10 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      padding: 0;
+      padding: 2px;
       cursor: zoom-in;
+      background: transparent !important;
+      background-color: transparent !important;
     }
 
     .image-wrapper {
@@ -580,6 +582,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       justify-content: center;
       transform-origin: center center;
       transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+      background: transparent !important;
+      background-color: transparent !important;
     }
 
     .image-wrapper.zoomed {
@@ -587,17 +591,20 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       cursor: zoom-out;
     }
 
+    /* Stretch both static photo AND animated GIF prominently with no surrounding white box */
     .media-display {
       display: none;
-      width: 100%;
-      height: 100%;
-      max-width: 100%;
-      max-height: 100%;
+      width: auto !important;
+      height: auto !important;
+      max-width: min(100%, 96vw) !important;
+      max-height: min(100%, 88vh, calc(100dvh - 105px)) !important;
       object-fit: contain;
       border-radius: 8px;
       filter: drop-shadow(0 16px 36px rgba(2, 1, 14, 0.92));
       transition: opacity 0.2s ease, filter 0.2s ease;
       pointer-events: auto;
+      background: transparent !important;
+      background-color: transparent !important;
     }
 
     .media-display.active {

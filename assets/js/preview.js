@@ -102,8 +102,9 @@ const photoboothPreview = (function () {
         const webcamConstraints = {
             audio: false,
             video: {
-                width: videoWidth,
-                height: videoHeight,
+                width: { ideal: videoWidth || 2160, min: 1280 },
+                height: { ideal: videoHeight || 1440, min: 853 },
+                aspectRatio: { ideal: 1.5 },
                 facingMode: config.preview.camera_mode
             }
         };

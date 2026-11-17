@@ -100,6 +100,8 @@
             $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
             // Pre-warm GIF creation silently in background so it's ready when user clicks
             prewarmGifInBackground(currentFilename);
+            // Trigger immediate background sync to Cloud R2 so photos are pushed instantly upon capture
+            triggerBackgroundCloudSync(currentFilename);
         } else {
             const rawStyle = $resultPage.css('--stage-background-image') || '';
             const match = rawStyle.match(/url\(["']?([^"')]+)["']?\)/);
@@ -1054,5 +1056,7 @@
             }
         }
     });
+
+    window.triggerBackgroundCloudSync = triggerBackgroundCloudSync;
 
 })(jQuery);
