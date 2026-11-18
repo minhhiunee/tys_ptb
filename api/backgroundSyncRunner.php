@@ -72,8 +72,8 @@ try {
                                 $poseFrameSequences,
                                 $layoutData,
                                 $gifTargetPath,
-                                210,
-                                360
+                                180,
+                                1350
                             );
                         }
                     }
@@ -96,8 +96,8 @@ try {
                         $gifBaked = $gifProcessor->createAnimatedGif(
                             $poseAbsPaths,
                             $gifTargetPath,
-                            210,
-                            360
+                            180,
+                            1080
                         );
                     }
                 }

@@ -332,9 +332,9 @@ $bgLandscapeUrl = $assetService->getUrl('resources/img/event/bg-landscape-1.jpg'
         .media-display {
             display: none;
             width: auto !important;
-            height: auto !important;
+            height: min(100%, 88vh, calc(100dvh - 102px)) !important;
             max-width: min(100%, 96vw) !important;
-            max-height: min(100%, 88vh, calc(100dvh - 105px)) !important;
+            max-height: min(100%, 88vh, calc(100dvh - 102px)) !important;
             object-fit: contain;
             border-radius: 8px;
             filter: drop-shadow(0 16px 36px rgba(2, 1, 14, 0.92));

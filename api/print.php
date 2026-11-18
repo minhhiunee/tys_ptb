@@ -9,6 +9,7 @@ use Photobooth\Image;
 use Photobooth\Processor\PrintProcessor;
 use Photobooth\Service\LoggerService;
 use Photobooth\Service\PrintManagerService;
+use Photobooth\Service\PrintPairService;
 use Photobooth\Service\RemoteStorageService;
 use Photobooth\Utility\PathUtility;
 
@@ -120,120 +121,31 @@ if (is_file($privatePrintApi)) {
     }
 }
 
-if (!file_exists($vars['printFile'])) {
-    try {
-        $source = $imageHandler->createFromImage($vars['sourceFile']);
-        if (!$source) {
-            throw new \Exception('Invalid image resource');
-        }
-        if (class_exists('Photobooth\Processor\PrintProcessor')) {
-            $processor = new PrintProcessor($imageHandler, $logger, $printManager, $vars, $config);
-        }
-        if ($processor !== null && $processor instanceof PrintProcessor && method_exists($processor, 'preProcessing')) {
-            [$imageHandler, $vars, $config, $source] = $processor->preProcessing($imageHandler, $vars, $config, $source);
-        }
+$pairService = PrintPairService::getInstance();
+$pairService->registerStrip($vars['fileName']);
+$pairStatus = $pairService->getStatus();
 
-        // rotate image if needed
-        if (imagesx($source) > imagesy($source) || $config['print']['no_rotate'] === true) {
-            $imageHandler->qrRotate = false;
-        } else {
-            $source = imagerotate($source, 90, 0);
-            $imageHandler->qrRotate = true;
-            if (!$source) {
-                throw new \Exception('Cannot rotate image resource.');
-            }
-        }
-
-        if ($config['print']['print_frame']) {
-            $imageHandler->framePath = $config['print']['frame'];
-            $imageHandler->frameExtend = false;
-            $source = $imageHandler->applyFrame($source);
-            if (!$source instanceof \GdImage) {
-                throw new \Exception('Failed to apply frame to image resource.');
-            }
-        }
-
-        if ($config['print']['qrcode']) {
-            $url = $config['qr']['url'];
-            if ($config['ftp']['enabled'] && $config['ftp']['useForQr']) {
-                $remoteStorageService = RemoteStorageService::getInstance();
-                $url = $remoteStorageService->getWebpageUri();
-                if ($config['qr']['append_filename']) {
-                    $url .= '/images/';
-                }
-            }
-            if ($config['qr']['append_filename']) {
-                $url .= $vars['fileName'];
-            }
-            $imageHandler->qrUrl = PathUtility::getPublicPath($url, true);
-            $imageHandler->qrSize = $config['print']['qrSize'];
-            $imageHandler->qrMargin = $config['print']['qrMargin'];
-            $imageHandler->qrColor = $config['print']['qrBgColor'];
-            $imageHandler->qrOffset = $config['print']['qrOffset'];
-            $imageHandler->qrPosition = $config['print']['qrPosition'];
-
-            $qrCode = $imageHandler->createQr();
-            if (!$qrCode instanceof \GdImage) {
-                throw new \Exception('Cannot create QR Code resource.');
-            }
-            $source = $imageHandler->applyQr($qrCode, $source);
-            if (!$source instanceof \GdImage) {
-                throw new \Exception('Cannot apply QR Code to image resource.');
-            }
-            unset($qrCode);
-        }
-
-        if ($config['textonprint']['enabled']) {
-            $imageHandler->fontSize = $config['textonprint']['font_size'];
-            $imageHandler->fontRotation = $config['textonprint']['rotation'];
-            $imageHandler->fontLocationX = $config['textonprint']['locationx'];
-            $imageHandler->fontLocationY = $config['textonprint']['locationy'];
-            $imageHandler->fontColor = $config['textonprint']['font_color'];
-            $imageHandler->fontPath = $config['textonprint']['font'];
-            $imageHandler->textLine1 = $config['textonprint']['line1'];
-            $imageHandler->textLine2 = $config['textonprint']['line2'];
-            $imageHandler->textLine3 = $config['textonprint']['line3'];
-            $imageHandler->textLineSpacing = $config['textonprint']['linespace'];
-
-            $source = $imageHandler->applyText($source);
-            if (!$source instanceof \GdImage) {
-                throw new \Exception('Failed to apply text to image resource.');
-            }
-        }
-
-        if ($config['print']['crop']) {
-            $source = $imageHandler->resizeCropImage($source, $config['print']['crop_width'], $config['print']['crop_height']);
-            if (!$source instanceof \GdImage) {
-                throw new \Exception('Failed to crop image resource.');
-            }
-        }
-
-        if ($processor !== null && $processor instanceof PrintProcessor && method_exists($processor, 'postProcessing')) {
-            [$imageHandler, $vars, $config, $source] = $processor->postProcessing($imageHandler, $vars, $config, $source);
-        }
-        $imageHandler->jpegQuality = 100;
-        if (!$imageHandler->saveJpeg($source, $vars['printFile'])) {
-            throw new \Exception('Cannot save print image.');
-        }
-
-        // clear cache
-        unset($source);
-    } catch (\Exception $e) {
-        // Try to clear cache
-        if ($source instanceof \GdImage) {
-            unset($source);
-        }
-
-        $logger->error($e->getMessage());
-
-        $data = [
-            'status' => 'error',
-            'error' => $e->getMessage(),
-        ];
-        echo json_encode($data);
-        die();
-    }
+if (!$pairStatus['can_print']) {
+    echo json_encode([
+        'status' => 'waiting_pair',
+        'error' => $pairStatus['message'],
+        'pair' => $pairStatus,
+    ]);
+    die();
 }
+
+$composeRes = $pairService->composePairForPrint($vars['printFile'], 100);
+if (empty($composeRes['success'])) {
+    $errMsg = $composeRes['error'] ?? 'Không thể ghép 2 dải ảnh PTB4 để in.';
+    $logger->error($errMsg);
+    echo json_encode([
+        'status' => 'error',
+        'error' => $errMsg,
+        'pair' => $pairStatus,
+    ]);
+    die();
+}
+$data['merged_info'] = $composeRes;
 
 // print image
 $status = 'ok';
@@ -318,7 +230,14 @@ $logger->debug('Print command: ' . $cmd);
 $logger->debug('Print command output: ' . $outputMessage);
 $logger->debug('Return value: ' . $returnValue);
 
-if ($status === 'ok') {
+if ($status === 'ok' || $status === 'queued') {
+    $pairService->clearQueue([
+        'job_id' => $vars['uniqueName'],
+        'left_file' => $composeRes['left_file'] ?? '',
+        'right_file' => $composeRes['right_file'] ?? '',
+        'printed_at' => time(),
+    ]);
+
     if ($vars['copies'] > 1) {
         for ($i = 1; $i <= $vars['copies']; $i++) {
             $printManager->addToPrintDb($vars['fileName'], $vars['uniqueName'] . '-' . $i);
@@ -343,6 +262,7 @@ if ($status === 'ok') {
 
 $data['status'] = $status;
 $data['count'] = $linecount;
+$data['pair'] = $pairService->getStatus();
 
 $logger->debug('data', $data);
 echo json_encode($data);

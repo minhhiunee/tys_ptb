@@ -392,8 +392,8 @@ class SyncQueueService
         // 1. Upload Final Photo first (if needed)
         if ($needsPhotoUpload) {
             $uploadPath = $finalPath;
-            if ($autoCompress && filesize($finalPath) > 250 * 1024) {
-                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 1200, 80);
+            if ($autoCompress && filesize($finalPath) > 350 * 1024) {
+                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 1800, 88);
                 if ($tempCompressedFile !== null) {
                     $uploadPath = $tempCompressedFile;
                 }
@@ -623,6 +623,10 @@ class SyncQueueService
 
     protected function saveQueue(array $queue): bool
     {
+        // Keep only the latest 30 sessions to prevent JSON bloat and keep I/O sub-millisecond
+        if (count($queue) > 30) {
+            $queue = array_slice($queue, -30, null, true);
+        }
         $dir = dirname($this->queueFile);
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
@@ -637,7 +641,7 @@ class SyncQueueService
     /**
      * Create an optimized Full-HD JPEG copy for rapid Cloud upload without modifying the local print file
      */
-    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1200, int $quality = 80): ?string
+    protected function createCompressedCloudCopy(string $sourcePath, int $maxDim = 1800, int $quality = 88): ?string
     {
         $tmpFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'ptb_cloud_' . uniqid('', true) . '.jpg';
         if (extension_loaded('imagick')) {

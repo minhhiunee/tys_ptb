@@ -5,8 +5,37 @@ declare(strict_types=1);
 require_once '../lib/boot.php';
 
 use Photobooth\Enum\FolderEnum;
+use Photobooth\Service\PrintPairService;
 
 header('Content-Type: application/json');
+
+$action = (string) ($_REQUEST['action'] ?? 'status');
+
+if (in_array($action, ['pair_status', 'remove_strip', 'clear_pair'], true) || empty($_REQUEST['job_id'])) {
+    $pairService = PrintPairService::getInstance();
+
+    if ($action === 'remove_strip') {
+        $targetFile = (string) ($_REQUEST['file'] ?? $_REQUEST['filename'] ?? '');
+        $pairStatus = $pairService->removeStrip($targetFile);
+        echo json_encode(['status' => 'ok', 'pair' => $pairStatus]);
+        exit();
+    }
+
+    if ($action === 'clear_pair') {
+        $pairStatus = $pairService->clearQueue();
+        echo json_encode(['status' => 'ok', 'pair' => $pairStatus]);
+        exit();
+    }
+
+    if (!empty($_REQUEST['register_file'])) {
+        $pairStatus = $pairService->registerStrip((string) $_REQUEST['register_file']);
+    } else {
+        $pairStatus = $pairService->getStatus();
+    }
+
+    echo json_encode(['status' => 'ok', 'pair' => $pairStatus]);
+    exit();
+}
 
 $jobId = basename(trim((string) ($_REQUEST['job_id'] ?? '')));
 if ($jobId === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $jobId)) {

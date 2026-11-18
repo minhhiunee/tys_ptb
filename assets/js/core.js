@@ -209,8 +209,8 @@ const photoBooth = (function () {
         frames: [],
         timer: null,
         canvas: null,
-        maxFramesPerPose: 16,
-        intervalMs: 420,
+        maxFramesPerPose: 18,
+        intervalMs: 380,
         captureFrame: () => {
             try {
                 const videoEl = previewVideo.get(0);
@@ -223,7 +223,7 @@ const photoBooth = (function () {
                 if (!api.timelapse.canvas) {
                     api.timelapse.canvas = document.createElement('canvas');
                 }
-                const maxDim = 480;
+                const maxDim = 840;
                 const scale = Math.min(1, maxDim / Math.max(videoEl.videoWidth, videoEl.videoHeight));
                 const w = Math.max(1, Math.round(videoEl.videoWidth * scale));
                 const h = Math.max(1, Math.round(videoEl.videoHeight * scale));
@@ -233,7 +233,7 @@ const photoBooth = (function () {
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(videoEl, 0, 0, w, h);
-                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.88);
+                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.92);
                 if (dataUrl && dataUrl.indexOf('data:image/jpeg') === 0) {
                     api.timelapse.frames.push(dataUrl);
                 }
@@ -1150,6 +1150,11 @@ const photoBooth = (function () {
                         api.renderChroma(data.file);
                     } else {
                         api.renderPic(data.file, data.images);
+                    }
+
+                    // Immediately sync 2-strip pair queue for Canon CP1500
+                    if (data && data.print_pair && typeof window.updatePairQueueUi === 'function') {
+                        window.updatePairQueueUi(data.print_pair);
                     }
 
                     // Trigger immediate background sync to Cloud R2

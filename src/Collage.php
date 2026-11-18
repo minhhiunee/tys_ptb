@@ -406,8 +406,16 @@ class Collage
             throw new \Exception('Invalid number of images.');
         }
 
-        //Use offset to reflect image file numbering
+        $needsPerImagePreEdit = (
+            $c->pictureFlip !== 'off'
+            || ($filter !== null && $filter !== ImageFilterEnum::PLAIN)
+            || ((int) $c->pictureRotation !== 0)
+            || $c->collagePolaroidEffect === 'enabled'
+        );
+
+        // Use offset to reflect image file numbering
         $placeholderOffset = 0;
+        $tempEditFiles = [];
         for ($i = 0; $i < $c->collageLimit; $i++) {
             if ($c->collagePlaceholder && $c->collagePlaceholderPosition == $i) {
                 $editImages[] = PathUtility::getAbsolutePath($c->collagePlaceholderPath);
@@ -417,69 +425,80 @@ class Collage
                 if (!isset($srcImagePaths[$srcIndex]) || !file_exists($srcImagePaths[$srcIndex])) {
                     throw new \Exception('The file ' . ($srcImagePaths[$srcIndex] ?? 'undefined') . ' does not exist.');
                 }
-                $singleimage = substr($srcImagePaths[$srcIndex], 0, -4);
-                $editfilename = $singleimage . '-edit.jpg';
-                if (!copy($srcImagePaths[$i - $placeholderOffset], $editfilename)) {
-                    throw new \Exception('Failed to copy image for editing.');
+                if ($needsPerImagePreEdit) {
+                    $singleimage = substr($srcImagePaths[$srcIndex], 0, -4);
+                    $editfilename = $singleimage . '-edit-' . $i . '.jpg';
+                    if (!copy($srcImagePaths[$srcIndex], $editfilename)) {
+                        throw new \Exception('Failed to copy image for editing.');
+                    }
+                    $editImages[] = $editfilename;
+                    $tempEditFiles[] = $editfilename;
+                } else {
+                    $editImages[] = $srcImagePaths[$srcIndex];
                 }
-                $editImages[] = $editfilename;
             }
         }
 
         $imageHandler->framePath = Helper::getPrefixedFile($c->collageFrame, $c->collageLayout);
         $imageHandler->frameExtend = false;
 
-        for ($i = 0; $i < $c->collageLimit; $i++) {
-            $imageResource = $imageHandler->createFromImage($editImages[$i]);
-            if (!$imageResource instanceof \GdImage) {
-                throw new \Exception('Failed to create image resource.');
-            }
-
-            if (
-                $c->pictureFlip !== 'off'
-                && (!$c->collagePlaceholder || $c->collagePlaceholderPosition !== $i)
-            ) {
-                if ($c->pictureFlip === 'flip-horizontal') {
-                    imageflip($imageResource, IMG_FLIP_HORIZONTAL);
-                } elseif ($c->pictureFlip === 'flip-vertical') {
-                    imageflip($imageResource, IMG_FLIP_VERTICAL);
-                } elseif ($c->pictureFlip === 'flip-both') {
-                    imageflip($imageResource, IMG_FLIP_BOTH);
-                }
-                $imageHandler->imageModified = true;
-            }
-
-            // apply filter
-            if ($filter !== null && $filter !== ImageFilterEnum::PLAIN) {
-                ImageUtility::applyFilter($filter, $imageResource);
-                $imageHandler->imageModified = true;
-            }
-
-            if ($c->pictureRotation !== '0') {
-                $imageResource = $imageHandler->rotateResizeImage(
-                    image: $imageResource,
-                    degrees: $c->pictureRotation,
-                    bgColor: $c->collageBackgroundColor
-                );
+        if ($needsPerImagePreEdit) {
+            for ($i = 0; $i < $c->collageLimit; $i++) {
+                $imageResource = $imageHandler->createFromImage($editImages[$i]);
                 if (!$imageResource instanceof \GdImage) {
-                    throw new \Exception('Failed to rotate and resize image resource.');
+                    throw new \Exception('Failed to create image resource.');
                 }
+
+                if (
+                    $c->pictureFlip !== 'off'
+                    && (!$c->collagePlaceholder || $c->collagePlaceholderPosition !== $i)
+                ) {
+                    if ($c->pictureFlip === 'flip-horizontal') {
+                        imageflip($imageResource, IMG_FLIP_HORIZONTAL);
+                    } elseif ($c->pictureFlip === 'flip-vertical') {
+                        imageflip($imageResource, IMG_FLIP_VERTICAL);
+                    } elseif ($c->pictureFlip === 'flip-both') {
+                        imageflip($imageResource, IMG_FLIP_BOTH);
+                    }
+                    $imageHandler->imageModified = true;
+                }
+
+                // apply filter
+                if ($filter !== null && $filter !== ImageFilterEnum::PLAIN) {
+                    ImageUtility::applyFilter($filter, $imageResource);
+                    $imageHandler->imageModified = true;
+                }
+
+                if ((int) $c->pictureRotation !== 0) {
+                    $imageResource = $imageHandler->rotateResizeImage(
+                        image: $imageResource,
+                        degrees: $c->pictureRotation,
+                        bgColor: $c->collageBackgroundColor
+                    );
+                    if (!$imageResource instanceof \GdImage) {
+                        throw new \Exception('Failed to rotate and resize image resource.');
+                    }
+                }
+
+                if ($c->collagePolaroidEffect === 'enabled') {
+                    $imageHandler->polaroidRotation = $c->collagePolaroidRotation;
+                    $imageResource = $imageHandler->effectPolaroid($imageResource);
+                }
+
+                $width = (int) imagesx($imageResource);
+                $height = (int) imagesy($imageResource);
+
+                if ($imageHandler->imageModified) {
+                    $imageHandler->saveJpeg($imageResource, $editImages[$i]);
+                    $imageHandler->imageModified = false;
+                }
+
+                unset($imageResource);
             }
-
-            if ($c->collagePolaroidEffect === 'enabled') {
-                $imageHandler->polaroidRotation = $c->collagePolaroidRotation;
-                $imageResource = $imageHandler->effectPolaroid($imageResource);
-            }
-
-            $width = (int) imagesx($imageResource);
-            $height = (int) imagesy($imageResource);
-
-            if ($imageHandler->imageModified) {
-                $imageHandler->saveJpeg($imageResource, $editImages[$i]);
-                $imageHandler->imageModified = false;
-            }
-
-            unset($imageResource);
+        } else {
+            $firstDim = @getimagesize($editImages[0]);
+            $width = (int) ($firstDim[0] ?? 1800);
+            $height = (int) ($firstDim[1] ?? 1200);
         }
 
         if (strpos($c->collageLayout, '2x') === 0) {
@@ -776,9 +795,9 @@ class Collage
         // Destroy the created collage in memory
         unset($my_collage);
 
-        for ($i = 0; $i < $c->collageLimit; $i++) {
-            if (($c->collagePlaceholder && $c->collagePlaceholderPosition != $i) || !$c->collagePlaceholder) {
-                unlink($editImages[$i]);
+        foreach ($tempEditFiles as $tmpEditFile) {
+            if (is_file($tmpEditFile)) {
+                @unlink($tmpEditFile);
             }
         }
 

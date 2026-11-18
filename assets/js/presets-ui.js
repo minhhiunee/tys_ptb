@@ -1,53 +1,39 @@
-/* globals api csrf photoBooth photoboothTools remoteBuzzerClient */
+/* globals photoBooth photoboothTools remoteBuzzerClient csrf */
 /**
- * Desktop Mouse-Centric Preset Controller for Photobooth
- * Supports click selection, mouse slider drag for Amount, and Hold-to-Compare Before/After.
+ * Photobooth Kiosk Controller:
+ * Handles 2-Strip Print Pair Queue for Canon SELPHY CP1500,
+ * Full-HD Framed GIF Viewer, and QR Code Delivery.
+ * Color grading is processed automatically upstream by Capture One.
  */
 (function ($) {
     'use strict';
 
-    let currentPreset = 'original';
-    let currentAmount = 100;
-    let originalImageUrl = '';
-    let currentProcessedUrl = '';
     let currentFilename = '';
-    let debounceTimer = null;
-    let isComparing = false;
+    let currentSessionId = '';
     let isViewingGif = false;
-    let hasAppliedPresetInSession = false;
-    let previewReqSeq = 0;
-    let activePreviewXhr = null;
-    let prewarmXhr = null;
-    let activeBakePromise = null;
-    let activeBakeKey = '';
-    let bakedStaticKey = '';
-    let bakedGifKey = '';
     let qrOpenSeq = 0;
+    let qrCountdownTimer = null;
+    let lastPairStatus = { count: 0, required: 2, can_print: false, pending: [] };
 
-    const $presetBar = $('#desktop-preset-bar');
     const $resultPage = $('.stage[data-stage="result"]');
-    const $amountSlider = $('#preset-amount-slider');
-    const $amountVal = $('#preset-amount-val');
     const $statusPill = $('#preset-status');
-    const $btnCompare = $('#btn-hold-compare');
+    const $pairPill = $('#pair-queue-pill');
+    const $pairText = $('#pair-queue-text');
     const $btnToggleGif = $('#btn-toggle-gif-preview');
 
     function setStatus(text, isLoading) {
-        $statusPill.text(text);
-        if (isLoading) {
-            $statusPill.addClass('loading');
-        } else {
-            $statusPill.removeClass('loading');
+        if ($statusPill.length) {
+            $statusPill.text(text);
+            $statusPill.toggleClass('loading', Boolean(isLoading));
         }
     }
 
     function extractFilename() {
         let fn = $resultPage.attr('data-img');
-        if (!fn && typeof api !== 'undefined' && api.filename) {
-            fn = api.filename;
+        if (!fn && typeof photoBooth !== 'undefined' && photoBooth.filename) {
+            fn = photoBooth.filename;
         }
         if (!fn) {
-            // Try extracting from --stage-background-image
             const rawStyle = $resultPage.css('--stage-background-image') || '';
             const match = rawStyle.match(/url\(["']?([^"')?#]+)[^"')]*["']?\)/);
             if (match && match[1]) {
@@ -55,440 +41,188 @@
                 fn = parts[parts.length - 1];
             }
         }
-        return fn || '';
+        return fn ? fn.trim() : '';
     }
 
-    function abortInFlightPrewarm() {
-        if (prewarmXhr && prewarmXhr.readyState !== 4) {
-            prewarmXhr.abort();
+    function getSessionId(filename) {
+        const fn = filename || currentFilename;
+        if (!fn) {
+            return '';
         }
-        prewarmXhr = null;
+        return fn.replace(/\.[^/.]+$/, '').replace(/^(orig_|raw_pose_\d+_|preview_base_)/, '');
     }
 
-    function initPresetBarForImage() {
-        clearTimeout(debounceTimer);
-        clearTimeout(bakeTimer);
-        if (activePreviewXhr && activePreviewXhr.readyState !== 4) {
-            activePreviewXhr.abort();
+    function updatePairQueueUi(pair) {
+        if (!pair || typeof pair !== 'object') {
+            return;
         }
-        activePreviewXhr = null;
-        abortInFlightPrewarm();
+        lastPairStatus = pair;
+        const count = parseInt(pair.count || 0, 10);
+        const canPrint = Boolean(pair.can_print);
+        const pending = Array.isArray(pair.pending) ? pair.pending : [];
 
+        // Update Dock Pill & Button Label
+        if (canPrint) {
+            $pairPill.addClass('ready');
+            $pairText.text('In ghép: 2/2 ✓');
+            $('#btn-preset-confirm-label').text('In ảnh ngay (2/2)');
+        } else {
+            $pairPill.removeClass('ready');
+            $pairText.text('In ghép: ' + count + '/2');
+            $('#btn-preset-confirm-label').text('Hoàn tất (' + count + '/2)');
+        }
+
+        // Update Modal Slot 1 (Left Half)
+        const $slotLeft = $('#pair-slot-left');
+        const $slotLeftImg = $('#pair-slot-left-img');
+        const $slotLeftPh = $('#pair-slot-left-placeholder');
+        const $slotLeftName = $('#pair-slot-left-name');
+        const $slotLeftSub = $('#pair-slot-left-sub');
+
+        if (pending[0]) {
+            $slotLeft.addClass('filled');
+            const leftUrl = pending[0].image_url || ('data/images/' + pending[0].filename);
+            $slotLeftImg.attr('src', leftUrl).removeClass('hidden');
+            $slotLeftPh.addClass('hidden');
+            $slotLeftName.text('#' + pending[0].session_id);
+            $slotLeftSub.text('Khung: ' + (pending[0].layout === 'ptb4-2' ? 'FramePTB4_2' : 'FramePTB4_1') + ' ✓');
+        } else {
+            $slotLeft.removeClass('filled');
+            $slotLeftImg.attr('src', '').addClass('hidden');
+            $slotLeftPh.removeClass('hidden');
+            $slotLeftName.text('Chưa có ảnh lượt 1');
+            $slotLeftSub.text('Chờ lượt chụp');
+        }
+
+        // Update Modal Slot 2 (Right Half)
+        const $slotRight = $('#pair-slot-right');
+        const $slotRightImg = $('#pair-slot-right-img');
+        const $slotRightPh = $('#pair-slot-right-placeholder');
+        const $slotRightName = $('#pair-slot-right-name');
+        const $slotRightSub = $('#pair-slot-right-sub');
+
+        if (pending[1]) {
+            $slotRight.addClass('filled');
+            const rightUrl = pending[1].image_url || ('data/images/' + pending[1].filename);
+            $slotRightImg.attr('src', rightUrl).removeClass('hidden');
+            $slotRightPh.addClass('hidden');
+            $slotRightName.text('#' + pending[1].session_id);
+            $slotRightSub.text('Khung: ' + (pending[1].layout === 'ptb4-2' ? 'FramePTB4_2' : 'FramePTB4_1') + ' ✓');
+        } else {
+            $slotRight.removeClass('filled');
+            $slotRightImg.attr('src', '').addClass('hidden');
+            $slotRightPh.removeClass('hidden');
+            $slotRightName.text(count === 1 ? 'Chờ chụp lượt 2...' : 'Chưa có ảnh lượt 2');
+            $slotRightSub.text(count === 1 ? 'Chụp thêm để mở khóa In' : 'Chờ lượt chụp');
+        }
+
+        // Update Print Button State
+        const $printBtn = $('#modal-btn-print');
+        const $printTitle = $('#modal-print-title');
+        const $printSub = $('#modal-print-sub');
+
+        if (canPrint) {
+            $printBtn.removeClass('pair-locked').prop('disabled', false);
+            $printTitle.text('In ảnh ghép (2/2) • Canon CP1500');
+            $printSub.text('Ghép Nửa Trái + Nửa Phải trên khổ giấy FramePTB');
+        } else {
+            $printBtn.addClass('pair-locked').prop('disabled', true);
+            $printTitle.text(count === 1 ? 'Chờ đủ 2 dải ảnh để in (1/2)' : 'Chờ đủ 2 dải ảnh để in (0/2)');
+            $printSub.text('Hãy bấm "Chụp lượt tiếp theo" bên dưới để đủ 2 tấm ghép in');
+        }
+    }
+
+    function refreshPairQueueStatus(registerFilename, callback) {
+        const statusUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/printStatus.php'
+            : 'api/printStatus.php';
+
+        $.ajax({
+            url: statusUrl,
+            method: 'GET',
+            data: {
+                action: 'pair_status',
+                register_file: registerFilename || '',
+                _t: Date.now()
+            },
+            dataType: 'json'
+        }).done(function (res) {
+            if (res && res.pair) {
+                updatePairQueueUi(res.pair);
+            }
+            if (typeof callback === 'function') {
+                callback(res && res.pair ? res.pair : null);
+            }
+        }).fail(function () {
+            if (typeof callback === 'function') {
+                callback(null);
+            }
+        });
+    }
+
+    function initResultDockForImage() {
         currentFilename = extractFilename();
-        currentPreset = 'original';
-        currentAmount = 100;
+        currentSessionId = getSessionId(currentFilename);
         isViewingGif = false;
-        hasAppliedPresetInSession = false;
-        activeBakePromise = null;
-        activeBakeKey = '';
-        bakedStaticKey = currentFilename ? (currentFilename + '|original|100') : '';
-        bakedGifKey = '';
+
         $('#result-gif-viewer').addClass('hidden').attr('aria-hidden', 'true');
         $('#result-gif-img').attr('src', '');
-        $btnToggleGif.removeClass('active comparing').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
-        $amountSlider.val(100);
-        $amountVal.text('100%');
+        $btnToggleGif.removeClass('active').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
+        $('#pair-print-feedback-banner').addClass('hidden');
 
-        $('.preset-btn').removeClass('active');
-        $('.preset-btn[data-preset="original"]').addClass('active');
-
-        // Always build fresh image URL from currentFilename with cache-busting timestamp
         if (currentFilename) {
-            const baseDir = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.images) ? environment.publicFolders.images : 'data/images';
-            originalImageUrl = baseDir + '/' + currentFilename + '?v=' + Date.now();
-            currentProcessedUrl = originalImageUrl;
-            $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
-            // Pre-warm GIF creation silently in background so it's ready when user clicks
-            prewarmGifInBackground(currentFilename);
-            // Trigger immediate background sync to Cloud R2 so photos are pushed instantly upon capture
-            triggerBackgroundCloudSync(currentFilename);
+            const baseDir = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.images)
+                ? environment.publicFolders.images
+                : 'data/images';
+            const freshUrl = baseDir + '/' + currentFilename + '?v=' + Date.now();
+            $resultPage.css('--stage-background-image', `url(${freshUrl})`);
+
+            // Register strip and refresh queue
+            refreshPairQueueStatus(currentFilename);
+            triggerBackgroundCloudSync(currentSessionId || currentFilename);
         } else {
-            const rawStyle = $resultPage.css('--stage-background-image') || '';
-            const match = rawStyle.match(/url\(["']?([^"')]+)["']?\)/);
-            if (match && match[1]) {
-                originalImageUrl = match[1];
-                currentProcessedUrl = originalImageUrl;
-            }
+            refreshPairQueueStatus('');
         }
 
-        $presetBar.removeClass('hidden');
+        $('#desktop-preset-bar').removeClass('hidden');
         setStatus('Sẵn sàng', false);
     }
 
-    function applyPresetPreview(presetId, amount) {
+    // Toggle Framed Time-Lapse GIF Viewer
+    function toggleGifViewer() {
         if (!currentFilename) {
             currentFilename = extractFilename();
         }
-        if (!currentFilename) {
-            console.warn('Cannot apply preset: filename not detected');
-            return;
-        }
-
-        const reqId = ++previewReqSeq;
-        currentPreset = presetId;
-        currentAmount = amount;
-        abortInFlightPrewarm();
-        if (activePreviewXhr && activePreviewXhr.readyState !== 4) {
-            activePreviewXhr.abort();
-        }
-        activePreviewXhr = null;
-
-        if (presetId === 'original' || amount === 0) {
-            $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
-            currentProcessedUrl = originalImageUrl;
-            setStatus('Original', false);
-            scheduleBake('original', 100);
-            return;
-        }
-
-        hasAppliedPresetInSession = true;
-        setStatus('Rendering...', true);
-
-        const postData = {
-            action: 'apply',
-            file: currentFilename,
-            preset: presetId,
-            amount: amount,
-            preview: 1
-        };
-
-        if (typeof csrf !== 'undefined' && csrf.key) {
-            postData[csrf.key] = csrf.token;
-        }
-
-        const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/presets.php'
-            : 'api/presets.php';
-
-        activePreviewXhr = $.ajax({
-            method: 'POST',
-            url: apiEndpoint,
-            data: postData,
-            dataType: 'json'
-        })
-        .done(function (data) {
-            if (reqId !== previewReqSeq) {
-                return;
-            }
-            if (data && data.success && data.url) {
-                currentProcessedUrl = data.url;
-                if (!isComparing) {
-                    $resultPage.css('--stage-background-image', `url(${data.url})`);
-                }
-                setStatus('Applied', false);
-                scheduleBake(presetId, amount);
-            } else {
-                setStatus('Failed', false);
-            }
-        })
-        .fail(function (xhr, status, err) {
-            if (status === 'abort' || reqId !== previewReqSeq) {
-                return;
-            }
-            console.error('Preset preview error:', err);
-            setStatus('Error', false);
-        });
-    }
-
-    let bakeTimer = null;
-    function scheduleBake(presetId, amount) {
-        clearTimeout(bakeTimer);
-        bakeTimer = setTimeout(function () {
-            if (!currentFilename) {
-                return;
-            }
-            forceBakeNow(presetId, amount, null, { syncAfter: false });
-        }, 180);
-    }
-
-    // Helper to keep photobooth result screen alive while interacting
-    function keepAlive() {
-        if (typeof photoBooth !== 'undefined' && photoBooth.resetTimeOut) {
-            photoBooth.resetTimeOut();
-        }
-    }
-
-    // Preset button click (Mouse)
-    $(document).on('click', '.preset-btn', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        keepAlive();
-        const presetId = $(this).data('preset');
-        $('.preset-btn').removeClass('active');
-        $(this).addClass('active');
-        applyPresetPreview(presetId, parseInt($('#preset-amount-slider').val(), 10) || 100);
-    });
-
-    // Amount slider (Mouse Drag & Input)
-    $(document).on('input change', '#preset-amount-slider', function (e) {
-        e.stopPropagation();
-        keepAlive();
-        const val = parseInt($(this).val(), 10);
-        currentAmount = isNaN(val) ? 100 : val;
-        $('#preset-amount-val').text(currentAmount + '%');
-
-        // If user drags slider while still on 'original', auto-select first preset so slider adjustment is immediately visible
-        if (currentPreset === 'original') {
-            const $firstPreset = $('.preset-btn').not('[data-preset="original"]').first();
-            if ($firstPreset.length) {
-                $('.preset-btn').removeClass('active');
-                $firstPreset.addClass('active');
-                currentPreset = $firstPreset.data('preset');
-            }
-        }
-        if (currentPreset !== 'original' && currentAmount > 0) {
-            hasAppliedPresetInSession = true;
-        }
-
-        clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(function () {
-            applyPresetPreview(currentPreset, currentAmount);
-        }, 80);
-    });
-
-    // Tactile Stepper Buttons (- / +) for Mouse Click & Touch Tap ergonomics
-    $(document).on('click', '#btn-amount-dec, #btn-amount-inc', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        keepAlive();
-        const isInc = $(this).attr('id') === 'btn-amount-inc';
-        const cur = parseInt($('#preset-amount-slider').val(), 10) || 100;
-        const nextVal = Math.max(0, Math.min(100, cur + (isInc ? 10 : -10)));
-        $('#preset-amount-slider').val(nextVal).trigger('input');
-    });
-
-    // Horizontal Mouse-Wheel Scroll on Preset Strip
-    $(document).on('wheel', '#preset-scroll-strip', function (e) {
-        const origEvent = e.originalEvent;
-        if (origEvent && Math.abs(origEvent.deltaY) > Math.abs(origEvent.deltaX)) {
-            e.preventDefault();
-            this.scrollLeft += origEvent.deltaY;
-        }
-    });
-
-    function triggerBackgroundCloudSync(filenameOrSessionId, callback) {
-        if (!filenameOrSessionId) {
-            if (typeof callback === 'function') {
-                callback(null);
-            }
-            return;
-        }
-        const sessionId = String(filenameOrSessionId).replace(/\.[^.]+$/, '');
-        const postData = {
-            action: 'sync_session',
-            session_id: sessionId
-        };
-        if (typeof csrf !== 'undefined' && csrf.key) {
-            postData[csrf.key] = csrf.token;
-        }
-        const syncEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/syncStatus.php'
-            : 'api/syncStatus.php';
-
-        $.ajax({
-            method: 'POST',
-            url: syncEndpoint,
-            data: postData,
-            dataType: 'json'
-        }).done(function (res) {
-            if (typeof callback === 'function') {
-                callback(res);
-            }
-        }).fail(function () {
-            if (typeof callback === 'function') {
-                callback(null);
-            }
-        });
-    }
-
-    function prewarmGifInBackground(filename) {
-        if (!filename) {
-            return;
-        }
-        abortInFlightPrewarm();
-        const postData = {
-            action: 'bake_gif',
-            file: filename,
-            preset: currentPreset || 'original',
-            amount: currentAmount || 100
-        };
-        if (typeof csrf !== 'undefined' && csrf.key) {
-            postData[csrf.key] = csrf.token;
-        }
-        const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/presets.php'
-            : 'api/presets.php';
-
-        // Pre-warm local GIF only; cloud sync waits until preset selection/delivery is finalized
-        prewarmXhr = $.ajax({
-            method: 'POST',
-            url: apiEndpoint,
-            data: postData,
-            dataType: 'json'
-        }).done(function (res) {
-            prewarmXhr = null;
-            if (filename === currentFilename && currentPreset === 'original' && !hasAppliedPresetInSession) {
-                bakedGifKey = filename + '|original|100';
-            }
-            console.log('GIF background pre-warm ready:', res);
-        }).fail(function () {
-            prewarmXhr = null;
-        });
-    }
-
-    function toggleGifDisplay(forceState) {
-        if (!currentFilename) {
-            currentFilename = extractFilename();
-        }
-        if (!currentFilename) {
-            return;
-        }
-
-        const targetState = typeof forceState === 'boolean' ? forceState : !isViewingGif;
-        isViewingGif = targetState;
-        const $btn = $('#btn-toggle-gif-preview');
+        currentSessionId = getSessionId(currentFilename);
 
         if (isViewingGif) {
-            const sessionId = currentFilename.replace(/\.[^.]+$/, '');
-            const gifUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.images ? environment.publicFolders.images : 'data/images') + '/' + sessionId + '.gif?v=' + Date.now();
-
-            setStatus('Đang tải GIF...', true);
-            $btn.addClass('active').html('<i class="fa fa-picture-o" aria-hidden="true"></i> <span>Xem ảnh tĩnh</span>');
-
-            const postData = {
-                action: 'bake_gif',
-                file: currentFilename,
-                preset: currentPreset || 'original',
-                amount: currentAmount || 100
-            };
-            if (typeof csrf !== 'undefined' && csrf.key) {
-                postData[csrf.key] = csrf.token;
-            }
-            const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-                ? environment.publicFolders.api + '/presets.php'
-                : 'api/presets.php';
-
-            $.ajax({
-                method: 'POST',
-                url: apiEndpoint,
-                data: postData,
-                dataType: 'json'
-            }).always(function () {
-                // Preload GIF image then smoothly swap directly onto stage background
-                const gifPreload = new Image();
-                gifPreload.onload = function () {
-                    if (isViewingGif) {
-                        $resultPage.css('--stage-background-image', `url(${gifUrl})`);
-                        setStatus('Đang xem GIF', false);
-                    }
-                };
-                gifPreload.onerror = function () {
-                    if (isViewingGif) {
-                        $resultPage.css('--stage-background-image', `url(${gifUrl})`);
-                        setStatus('Đang xem GIF', false);
-                    }
-                };
-                gifPreload.src = gifUrl;
-            });
+            isViewingGif = false;
+            $('#result-gif-viewer').addClass('hidden').attr('aria-hidden', 'true');
+            $btnToggleGif.removeClass('active').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
         } else {
-            // Revert background back to pristine static photo
-            const staticUrl = currentProcessedUrl || originalImageUrl;
-            if (staticUrl) {
-                $resultPage.css('--stage-background-image', `url(${staticUrl})`);
-            }
-            $btn.removeClass('active').html('<i class="fa fa-film" aria-hidden="true"></i> <span>Xem GIF</span>');
-            setStatus('Sẵn sàng', false);
+            isViewingGif = true;
+            const baseDir = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.images)
+                ? environment.publicFolders.images
+                : 'data/images';
+            const gifUrl = baseDir + '/' + currentSessionId + '.gif?v=' + Date.now();
+            $('#result-gif-img').attr('src', gifUrl);
+            $('#result-gif-viewer').removeClass('hidden').attr('aria-hidden', 'false');
+            $btnToggleGif.addClass('active').html('<i class="fa fa-times" aria-hidden="true"></i> <span>Đóng GIF</span>');
         }
     }
 
-    // Toggle Time-Lapse Animated GIF preview right on Result screen
     $(document).on('click', '#btn-toggle-gif-preview', function (e) {
         e.preventDefault();
-        e.stopPropagation();
         keepAlive();
-        toggleGifDisplay();
+        toggleGifViewer();
     });
 
     $(document).on('click', '#btn-close-gif-viewer', function (e) {
         e.preventDefault();
-        e.stopPropagation();
         keepAlive();
-        toggleGifDisplay(false);
-    });
-
-    // Before / After Hold (Mouse down / Touch start = view original, release = view preset)
-    $btnCompare.on('mousedown touchstart', function (e) {
-        e.preventDefault();
-        if (currentPreset === 'original') {
-            return;
+        if (isViewingGif) {
+            toggleGifViewer();
         }
-        isComparing = true;
-        $(this).addClass('comparing');
-        $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
-    });
-
-    $(document).on('mouseup mouseleave touchend touchcancel', function () {
-        if (isComparing) {
-            isComparing = false;
-            $btnCompare.removeClass('comparing');
-            if (currentProcessedUrl) {
-                $resultPage.css('--stage-background-image', `url(${currentProcessedUrl})`);
-            }
-        }
-    });
-
-    // Keyboard Shortcuts (1, 2, 3 and \)
-    $(document).on('keydown', function (e) {
-        if (!$resultPage.hasClass('stage--active')) {
-            return;
-        }
-
-        // Avoid triggering inside input fields
-        if ($(e.target).is('input, textarea, select')) {
-            return;
-        }
-
-        if (e.key === '1') {
-            $('.preset-btn[data-preset="original"]').trigger('click');
-        } else if (e.key === '2') {
-            const $btn = $('.preset-btn').eq(1);
-            if ($btn.length) {
-                $btn.trigger('click');
-            }
-        } else if (e.key === '3') {
-            const $btn = $('.preset-btn').eq(2);
-            if ($btn.length) {
-                $btn.trigger('click');
-            }
-        } else if (e.key === '\\') {
-            // Toggle before/after
-            isComparing = !isComparing;
-            if (isComparing) {
-                $btnCompare.addClass('comparing');
-                $resultPage.css('--stage-background-image', `url(${originalImageUrl})`);
-            } else {
-                $btnCompare.removeClass('comparing');
-                $resultPage.css('--stage-background-image', `url(${currentProcessedUrl})`);
-            }
-        }
-    });
-
-    // Watch for result stage activation and image changes (debounced to avoid multiple redundant reloads)
-    let lastActiveImg = null;
-    const observer = new MutationObserver(function (mutations) {
-        mutations.forEach(function (mutation) {
-            if (mutation.attributeName === 'class' || mutation.attributeName === 'data-img') {
-                if ($resultPage.hasClass('stage--active')) {
-                    const currentImg = $resultPage.attr('data-img') || extractFilename();
-                    if (currentImg && currentImg !== lastActiveImg) {
-                        lastActiveImg = currentImg;
-                        initPresetBarForImage();
-                    }
-                } else {
-                    lastActiveImg = null;
-                }
-            }
-        });
     });
 
     // Retake button on Result Screen
@@ -496,6 +230,17 @@
         e.preventDefault();
         keepAlive();
         if (confirm('Bạn muốn chụp lại lượt chụp này?')) {
+            const statusUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+                ? environment.publicFolders.api + '/printStatus.php'
+                : 'api/printStatus.php';
+            const discardFile = currentFilename || extractFilename();
+            if (discardFile) {
+                $.ajax({
+                    url: statusUrl,
+                    method: 'POST',
+                    data: { action: 'remove_strip', file: discardFile }
+                });
+            }
             if (typeof photoBooth !== 'undefined') {
                 photoBooth.takingPic = false;
                 photoBooth.nextCollageNumber = 0;
@@ -511,438 +256,88 @@
         }
     });
 
-    function forceBakeNow(presetId, amount, callback, options) {
-        clearTimeout(debounceTimer);
-        clearTimeout(bakeTimer);
-        abortInFlightPrewarm();
-
-        const opts = options || {};
-        const syncAfter = opts.syncAfter !== false;
-        const resolvedPreset = (presetId && String(presetId)) || currentPreset || 'original';
-        const resolvedAmount = (typeof amount === 'number' && !isNaN(amount))
-            ? amount
-            : (parseInt($amountSlider.val(), 10) || currentAmount || 100);
-        const normalizedAmount = resolvedPreset === 'original' ? 100 : resolvedAmount;
-        const targetFile = currentFilename;
-        const stateKey = targetFile ? (targetFile + '|' + resolvedPreset + '|' + normalizedAmount) : '';
-        const needsBake = Boolean(targetFile) && (
-            bakedStaticKey !== stateKey ||
-            bakedGifKey !== stateKey ||
-            (resolvedPreset === 'original' && hasAppliedPresetInSession)
-        );
-
-        const doneCallback = function (res) {
-            if (typeof callback === 'function') {
-                callback(res || null);
-            }
-        };
-
-        if (!targetFile || !needsBake) {
-            const deferred = $.Deferred();
-            if (targetFile && syncAfter) {
-                triggerBackgroundCloudSync(targetFile, function (syncRes) {
-                    doneCallback(syncRes);
-                    deferred.resolve(syncRes);
-                });
-            } else {
-                doneCallback(null);
-                deferred.resolve(null);
-            }
-            return deferred.promise();
-        }
-
-        const reqKey = stateKey + '|bake';
-        if (activeBakePromise && activeBakeKey === reqKey) {
-            return activeBakePromise.then(function (res) {
-                doneCallback(res);
-                return res;
-            });
-        }
-
-        setStatus('Saving...', true);
-        const postData = {
-            action: 'apply',
-            file: targetFile,
-            preset: resolvedPreset,
-            amount: normalizedAmount,
-            bake_gif: 1,
-            include_qr: opts.includeQr ? 1 : 0,
-            preview: 0
-        };
-        if (typeof csrf !== 'undefined' && csrf.key) {
-            postData[csrf.key] = csrf.token;
-        }
-        const apiEndpoint = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/presets.php'
-            : 'api/presets.php';
-
-        const deferred = $.Deferred();
-        activeBakeKey = reqKey;
-        activeBakePromise = deferred.promise();
-
-        $.ajax({
-            method: 'POST',
-            url: apiEndpoint,
-            data: postData,
-            dataType: 'json'
-        }).done(function (data) {
-            if (data && data.success) {
-                bakedStaticKey = stateKey;
-                bakedGifKey = stateKey;
-                if (targetFile === currentFilename) {
-                    if (resolvedPreset === 'original') {
-                        hasAppliedPresetInSession = false;
-                    }
-                    if (data.url && !isComparing) {
-                        currentProcessedUrl = data.url;
-                        if (!isViewingGif) {
-                            $resultPage.css('--stage-background-image', `url(${data.url})`);
-                        }
-                    }
-                    if (isViewingGif && data.gif_url) {
-                        $('#result-gif-img').attr('src', data.gif_url);
-                    }
-                }
-            }
-            setStatus('Ready', false);
-            if (syncAfter) {
-                triggerBackgroundCloudSync(targetFile, function (syncRes) {
-                    doneCallback(syncRes);
-                    deferred.resolve(data || null);
-                });
-            } else {
-                doneCallback(data || null);
-                deferred.resolve(data || null);
-            }
-        }).fail(function (err) {
-            setStatus('Ready', false);
-            doneCallback(null);
-            deferred.resolve(null);
-            console.error('Preset bake failed:', err);
-        }).always(function () {
-            if (activeBakeKey === reqKey) {
-                activeBakePromise = null;
-                activeBakeKey = '';
-            }
-        });
-
-        return activeBakePromise;
-    }
-
-    // Direct QR button on Preset Bar -> strictly bake preset + GIF before QR / Cloud upload runs
-    $(document).on('click', '#btn-preset-qr', function (e) {
+    // Direct QR button on dock -> open Guest QR Delivery Modal
+    $(document).on('click', '#btn-preset-qr, #modal-btn-qr', function (e) {
         e.preventDefault();
         keepAlive();
         openQrDeliveryModal();
     });
 
-    // Confirm button on Result Screen -> open Confirm & Print modal and bake in background
+    // Confirm button on dock -> open Confirm Modal
     $(document).on('click', '#btn-preset-confirm', function (e) {
         e.preventDefault();
         keepAlive();
+        refreshPairQueueStatus(currentFilename || extractFilename());
         $('#confirmSuccessModal').removeClass('hidden').attr('aria-hidden', 'false');
-        forceBakeNow(currentPreset, currentAmount, null, { syncAfter: true });
     });
 
-    let qrCountdownTimer = null;
-
-    function openQrDeliveryModal(explicitFilename) {
-        if (!currentFilename && $resultPage.hasClass('stage--active')) {
-            currentFilename = extractFilename();
-        }
-        const isInGallery = $('#gallery').hasClass('gallery--open') || $('.pswp--open').length > 0;
-        const isFromStartScreen = !$resultPage.hasClass('stage--active') || isInGallery;
-        const targetFile = explicitFilename || ((!isFromStartScreen && currentFilename) ? currentFilename : 'latest');
-        const needsResultBake = !isFromStartScreen && Boolean(currentFilename) && (!explicitFilename || explicitFilename === currentFilename);
-        const openSeq = ++qrOpenSeq;
-
-        // Close any legacy modal if open
-        if (typeof photoboothTools !== 'undefined' && photoboothTools.modal && typeof photoboothTools.modal.close === 'function') {
-            photoboothTools.modal.close();
-        }
-        $('#confirmSuccessModal, #cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
-        const $modal = $('#qrDeliveryModal');
-        const $img = $('#qr-modal-img');
-        const $spinner = $('#qr-loading-spinner');
-        const $spinnerLabel = $spinner.find('span');
-        const $badge = $('#qr-mode-badge');
-        const $instruction = $('#qr-modal-instruction');
-        const $link = $('#qr-direct-link');
-        const $countVal = $('#qr-countdown-val');
-        const $countBox = $('#qr-countdown-box');
-        const $finishBtn = $('#qr-btn-finish');
-
-        if ($modal.parent()[0] !== document.body) {
-            $modal.appendTo(document.body);
-        }
-
-        // Reset state cleanly before baking & fetching QR
-        $img.hide().attr('src', '');
-        $link.hide().attr('href', '#');
-        $spinnerLabel.text(needsResultBake ? 'Đang áp dụng bộ lọc màu & hoàn tất ảnh...' : 'Đang khởi tạo mã QR...');
-        $spinner.show();
-        if (qrCountdownTimer) {
-            clearInterval(qrCountdownTimer);
-            qrCountdownTimer = null;
-        }
-        $countBox.hide();
-        $finishBtn.toggle(!isInGallery);
-
-        if (needsResultBake) {
-            $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang áp dụng bộ lọc màu...</span>');
-            $instruction.text('Hệ thống đang lưu bộ lọc màu vào Ảnh & GIF trước khi tạo mã QR...');
-        }
-
-        $modal.removeClass('hidden').attr('aria-hidden', 'false');
-
-        const apiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/qrcode.php'
-            : 'api/qrcode.php';
-
-        const startQrCountdown = function () {
-            if (!isFromStartScreen) {
-                $countBox.show();
-                $finishBtn.show();
-                $countVal.text('45');
-                let secondsLeft = 45;
-                qrCountdownTimer = setInterval(function () {
-                    secondsLeft--;
-                    $countVal.text(secondsLeft);
-                    if (secondsLeft <= 0) {
-                        clearInterval(qrCountdownTimer);
-                        qrCountdownTimer = null;
-                        window.location.assign('./');
-                    }
-                }, 1000);
-            } else {
-                $countBox.hide();
-                $finishBtn.toggle(!isInGallery);
-            }
-        };
-
-        const applyQrPayload = function (data) {
-            if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
-                return;
-            }
-            if (data && data.url) {
-                const resolvedFile = data.filename || targetFile;
-                $link.attr('href', data.url).show();
-
-                if (data.mode === 'venue_wifi') {
-                    $badge.attr('class', 'qr-badge local').html('<i class="fa fa-wifi"></i> <span>Wi-Fi Nội Bộ (LAN) • Tải trực tiếp</span>');
-                    $instruction.text('Kết nối cùng mạng Wi-Fi với máy Photobooth, sau đó mở camera quét mã QR bên dưới để tải Ảnh gốc & GIF.');
-                } else {
-                    $instruction.text('Mở camera điện thoại (dùng 4G/5G hoặc bất kỳ WiFi nào) quét mã QR bên dưới để tải Ảnh gốc & Ảnh động GIF về máy.');
-                    if (data.sync_status === 'synced') {
-                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
-                    } else if (resolvedFile && resolvedFile !== 'demo_session.jpg') {
-                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-spinner fa-spin"></i> <span>Đang đẩy Ảnh & GIF lên Cloud R2...</span>');
-                        triggerBackgroundCloudSync(data.session_id || resolvedFile, function (syncRes) {
-                            if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
-                                return;
-                            }
-                            if (syncRes && syncRes.success && syncRes.record && syncRes.record.status === 'synced') {
-                                $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Đã đồng bộ Ảnh & GIF ✓</span>');
-                            } else {
-                                $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-exclamation-circle"></i> <span>Chờ đồng bộ Cloud R2</span>');
-                            }
-                        });
-                    } else {
-                        $badge.attr('class', 'qr-badge cloud').html('<i class="fa fa-cloud"></i> <span>Cloud R2 • Sẵn sàng</span>');
-                    }
-                }
-
-                $img.off('load error').on('load', function () {
-                    $spinner.hide();
-                    $img.fadeIn(200);
-                }).on('error', function () {
-                    $spinner.html('<span style="color:#ef4444;"><i class="fa fa-exclamation-triangle"></i> Lỗi tạo mã QR</span>');
-                });
-
-                const qrImgSrc = data.qr_image || (apiUrl + '?filename=' + encodeURIComponent(resolvedFile) + '&_t=' + Date.now());
-                $img.attr('src', qrImgSrc);
-            }
-            startQrCountdown();
-        };
-
-        const fetchQrAndSync = function (bakeRes) {
-            if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
-                return;
-            }
-            if (bakeRes && bakeRes.qr && bakeRes.qr.url) {
-                applyQrPayload(bakeRes.qr);
-                return;
-            }
-            $spinnerLabel.text('Đang khởi tạo mã QR...');
-
-            $.ajax({
-                url: apiUrl,
-                method: 'GET',
-                data: {
-                    filename: targetFile,
-                    json: 1,
-                    _t: Date.now()
-                },
-                dataType: 'json'
-            }).done(applyQrPayload).fail(function () {
-                if (openSeq !== qrOpenSeq || $modal.hasClass('hidden')) {
-                    return;
-                }
-                $img.attr('src', apiUrl + '?filename=' + encodeURIComponent(targetFile) + '&_t=' + Date.now()).show();
-                $spinner.hide();
-                startQrCountdown();
-            });
-        };
-
-        if (needsResultBake) {
-            forceBakeNow(currentPreset, currentAmount, null, { syncAfter: false, includeQr: true }).then(fetchQrAndSync, function () {
-                fetchQrAndSync(null);
-            });
-        } else {
-            fetchQrAndSync(null);
-        }
-    }
-
-    // Expose globally so Gallery / History (PhotoSwipe) & core.js use this exact Cloud R2 QR modal
-    window.openCloudQrModal = openQrDeliveryModal;
-
-    function openCloudR2SetupModal() {
-        const $modal = $('#cloudR2SetupModal');
-        if ($modal.parent()[0] !== document.body) {
-            $modal.appendTo(document.body);
-        }
-        $('#qr-net-save-msg').text('');
-        $modal.removeClass('hidden').attr('aria-hidden', 'false');
-
-        const netApiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/networkMode.php'
-            : 'api/networkMode.php';
-
-        $.ajax({
-            url: netApiUrl,
-            method: 'GET',
-            dataType: 'json'
-        }).done(function (res) {
-            if (res && res.config) {
-                const mode = res.config.mode === 'venue_wifi' ? 'venue_wifi' : 'cloud_web';
-                $('input[name="qr_delivery_mode"][value="' + mode + '"]').prop('checked', true);
-                $('#qr-fields-venue').toggle(mode === 'venue_wifi');
-                $('#qr-fields-cloud').toggle(mode === 'cloud_web');
-                if (res.config.cloud_url) {
-                    $('#input-cloud-url').val(res.config.cloud_url);
-                }
-                if (res.config.cloud_api_key) {
-                    $('#input-cloud-key').val(res.config.cloud_api_key);
-                }
-                if (typeof res.config.venue_ip === 'string') {
-                    $('#input-venue-ip').val(res.config.venue_ip);
-                }
-            }
-        });
-    }
-
-    function closeQrDeliveryModal() {
-        ++qrOpenSeq;
-        if (qrCountdownTimer) {
-            clearInterval(qrCountdownTimer);
-            qrCountdownTimer = null;
-        }
-        $('#qrDeliveryModal').addClass('hidden').attr('aria-hidden', 'true');
-    }
-
-    function triggerPrintAction() {
-        if (!currentFilename) {
-            currentFilename = extractFilename();
-        }
-        if (!currentFilename) {
-            alert('Không tìm thấy file ảnh để in.');
-            return;
-        }
-
+    // Modal Close
+    $(document).on('click', '#modal-btn-close, .confirm-modal-backdrop', function (e) {
+        e.preventDefault();
         $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+    });
 
-        if (typeof photoboothTools !== 'undefined' && typeof photoboothTools.printImage === 'function') {
-            photoboothTools.printImage(currentFilename, 1, function () {
-                if (typeof remoteBuzzerClient !== 'undefined' && remoteBuzzerClient.inProgress) {
-                    remoteBuzzerClient.inProgress(false);
-                }
-            });
-        } else {
-            // Direct API fallback
-            const apiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-                ? environment.publicFolders.api + '/print.php'
-                : 'api/print.php';
-
-            $.ajax({
-                method: 'GET',
-                url: apiUrl,
-                data: {
-                    filename: currentFilename,
-                    copies: 1,
-                    [csrf.key]: csrf.token
-                },
-                dataType: 'json'
-            }).done(function (data) {
-                if (data.status === 'ok' || data.status === 'queued') {
-                    alert('Lệnh in đã được chuyển tới máy in! Vui lòng nhận ảnh tại khay in.');
-                } else if (data.status === 'locking') {
-                    alert('Máy in đang bị khóa do đã đạt giới hạn bản in.');
-                } else {
-                    alert('Lỗi in ảnh: ' + (data.error || 'Vui lòng kiểm tra kết nối máy in.'));
-                }
-            }).fail(function () {
-                window.print();
-            });
-        }
-    }
-
-    // Confirmation Modal actions
+    // Print Button inside Modal -> Trigger 2-Strip Merged Print on Canon CP1500
     $(document).on('click', '#modal-btn-print', function (e) {
         e.preventDefault();
-        if ($resultPage.hasClass('stage--active') && currentFilename) {
-            forceBakeNow(currentPreset, currentAmount, function () {
-                triggerPrintAction();
-            }, { syncAfter: false });
-        } else {
-            triggerPrintAction();
-        }
-    });
+        keepAlive();
 
-    $(document).on('click', '#btn-start-qr-settings', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        openCloudR2SetupModal();
-    });
-
-    $(document).on('click', '#r2-setup-btn-close, #r2-setup-backdrop', function (e) {
-        e.preventDefault();
-        $('#cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
-    });
-
-    $(document).on('click', '#btn-r2-test-qr-latest', function (e) {
-        e.preventDefault();
-        openQrDeliveryModal('latest');
-    });
-
-    $(document).on('click', '#modal-btn-qr, [data-command="qrbtn"], .qrbtn', function (e) {
-        if (e.isDefaultPrevented() && $(e.target).closest('[data-command="qrbtn"]').length) {
+        const $btn = $(this);
+        if ($btn.hasClass('pair-locked') || $btn.prop('disabled')) {
             return;
         }
-        e.preventDefault();
-        openQrDeliveryModal();
+
+        $btn.prop('disabled', true).addClass('pair-locked');
+        $('#modal-print-title').text('Đang ghép 2 dải ảnh & gửi máy in Canon CP1500...');
+
+        const printUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/print.php'
+            : 'api/print.php';
+
+        const targetFile = currentFilename || extractFilename();
+        const queryData = {
+            filename: targetFile,
+            copies: 1,
+            _t: Date.now()
+        };
+        if (typeof csrf !== 'undefined' && csrf.key) {
+            queryData[csrf.key] = csrf.token;
+        }
+
+        $.ajax({
+            url: printUrl,
+            method: 'GET',
+            data: queryData,
+            dataType: 'json'
+        }).done(function (res) {
+            if (res && (res.status === 'ok' || res.status === 'queued' || res.spooled)) {
+                $('#pair-print-feedback-banner').removeClass('hidden');
+                $('#pair-print-feedback-text').text('Đã gửi lệnh in 2 dải ảnh thành công ra máy in Canon SELPHY CP1500! Hàng đợi đã sẵn sàng cho 2 lượt tiếp theo.');
+                if (res.pair) {
+                    updatePairQueueUi(res.pair);
+                } else {
+                    refreshPairQueueStatus('');
+                }
+            } else {
+                alert(res.error || 'Có lỗi khi gửi lệnh in.');
+                $btn.prop('disabled', false).removeClass('pair-locked');
+                $('#modal-print-title').text('Thử in lại (2/2)');
+            }
+        }).fail(function (xhr) {
+            alert('Lỗi kết nối máy in: ' + (xhr.statusText || 'Vui lòng kiểm tra lại cáp kết nối máy in'));
+            $btn.prop('disabled', false).removeClass('pair-locked');
+            $('#modal-print-title').text('Thử in lại (2/2)');
+        });
     });
 
-    $(document).on('click', '#qr-btn-finish', function (e) {
+    // Home button: Return to Start Screen for Next Strip
+    $(document).on('click', '#modal-btn-home', function (e) {
         e.preventDefault();
-        closeQrDeliveryModal();
+        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
         window.location.assign('./');
     });
 
-    $(document).on('click', '#qr-btn-close, #qr-modal-backdrop', function (e) {
-        e.preventDefault();
-        closeQrDeliveryModal();
-    });
-
+    // Gallery button: Open Photobooth Gallery
     $(document).on('click', '#modal-btn-gallery', function (e) {
         e.preventDefault();
         $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
@@ -952,74 +347,180 @@
         }
     });
 
-    $(document).on('click', '#modal-btn-home', function (e) {
+    // QR Delivery Modal Logic
+    function openQrDeliveryModal(explicitFilename) {
+        if (!currentFilename && $resultPage.hasClass('stage--active')) {
+            currentFilename = extractFilename();
+        }
+        currentSessionId = getSessionId(currentFilename);
+
+        const isInGallery = $('#gallery').hasClass('gallery--open') || $('.pswp--open').length > 0;
+        const isFromStartScreen = !$resultPage.hasClass('stage--active') || isInGallery;
+        const targetFile = explicitFilename || ((!isFromStartScreen && currentFilename) ? currentFilename : 'latest');
+        const openSeq = ++qrOpenSeq;
+
+        $('#confirmSuccessModal, #cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
+        const $modal = $('#qrDeliveryModal');
+        const $img = $('#qr-modal-img');
+        const $spinner = $('#qr-loading-spinner');
+        const $badge = $('#qr-mode-badge');
+        const $instruction = $('#qr-modal-instruction');
+        const $link = $('#qr-direct-link');
+        const $countVal = $('#qr-countdown-val');
+        const $countBox = $('#qr-countdown-box');
+        const $finishBtn = $('#qr-btn-finish');
+
+        $img.hide().attr('src', '');
+        $spinner.show();
+        $link.attr('href', '#').text('Đang tải liên kết nhận ảnh...');
+        $badge.removeClass('local').addClass('cloud').html('<i class="fa fa-cloud" aria-hidden="true"></i> <span>Đang khởi tạo mã QR...</span>');
+
+        $modal.removeClass('hidden').attr('aria-hidden', 'false');
+
+        const netApiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/networkMode.php'
+            : 'api/networkMode.php';
+
+        $.ajax({
+            url: netApiUrl,
+            method: 'GET',
+            data: { file: targetFile, _t: Date.now() },
+            dataType: 'json'
+        }).done(function (data) {
+            if (openSeq !== qrOpenSeq) {
+                return;
+            }
+            if (data && data.url) {
+                const qrSrc = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+                    ? environment.publicFolders.api + '/qrcode.php?url=' + encodeURIComponent(data.url) + '&_t=' + Date.now()
+                    : 'api/qrcode.php?url=' + encodeURIComponent(data.url) + '&_t=' + Date.now();
+
+                $img.attr('src', qrSrc).on('load', function () {
+                    if (openSeq !== qrOpenSeq) {
+                        return;
+                    }
+                    $spinner.hide();
+                    $img.show();
+                });
+
+                $link.attr('href', data.url).html('<i class="fa fa-external-link" aria-hidden="true"></i> <span>' + data.url + '</span>');
+
+                if (data.mode === 'venue_wifi') {
+                    $badge.removeClass('cloud').addClass('local').html('<i class="fa fa-wifi" aria-hidden="true"></i> <span>Wi-Fi Nội Bộ Kiosk</span>');
+                    $instruction.text('Quý khách vui lòng kết nối vào Wi-Fi của sự kiện để quét mã QR và tải ảnh trực tiếp từ máy Kiosk.');
+                } else {
+                    $badge.removeClass('local').addClass('cloud').html('<i class="fa fa-cloud" aria-hidden="true"></i> <span>Cloud R2 (4G / 5G / Wi-Fi)</span>');
+                    $instruction.text('Mở camera điện thoại (dùng 4G/5G hoặc Wi-Fi bất kỳ) hướng vào mã bên dưới để nhận cả Ảnh ghép khung & Ảnh động GIF.');
+                }
+            } else {
+                $spinner.html('<span style="color:#ef4444;">Không thể tạo mã QR. Vui lòng thử lại.</span>');
+            }
+        }).fail(function () {
+            if (openSeq !== qrOpenSeq) {
+                return;
+            }
+            $spinner.html('<span style="color:#ef4444;">Lỗi kết nối tạo mã QR.</span>');
+        });
+
+        // Countdown timer (45s on result screen, 60s from start screen)
+        clearInterval(qrCountdownTimer);
+        let secondsLeft = isFromStartScreen ? 60 : 45;
+        $countVal.text(secondsLeft);
+        $countBox.show();
+
+        if (isFromStartScreen) {
+            $finishBtn.html('<i class="fa fa-check" aria-hidden="true"></i> <span>Đã quét xong • Đóng cửa sổ</span>');
+        } else {
+            $finishBtn.html('<i class="fa fa-check" aria-hidden="true"></i> <span>Đã quét xong • Mời lượt chụp tiếp theo</span>');
+        }
+
+        qrCountdownTimer = setInterval(function () {
+            secondsLeft--;
+            $countVal.text(secondsLeft);
+            if (secondsLeft <= 0) {
+                clearInterval(qrCountdownTimer);
+                closeQrDeliveryModal();
+                if (!isFromStartScreen) {
+                    window.location.assign('./');
+                }
+            }
+        }, 1000);
+    }
+
+    function closeQrDeliveryModal() {
+        qrOpenSeq++;
+        clearInterval(qrCountdownTimer);
+        $('#qrDeliveryModal').addClass('hidden').attr('aria-hidden', 'true');
+    }
+
+    $(document).on('click', '#qr-btn-finish', function (e) {
         e.preventDefault();
-        window.location.assign('./');
+        closeQrDeliveryModal();
+        if ($resultPage.hasClass('stage--active')) {
+            window.location.assign('./');
+        }
     });
 
-    $(document).on('click', '#modal-btn-close, #modal-btn-close-text, .confirm-modal-backdrop', function (e) {
+    $(document).on('click', '#qr-btn-close, #qr-modal-backdrop', function (e) {
         e.preventDefault();
-        $('#confirmSuccessModal').addClass('hidden').attr('aria-hidden', 'true');
+        closeQrDeliveryModal();
     });
 
-    // Toggle QR Network Mode settings (Hướng 1 vs Hướng 2) from QR modal or Start screen
+    // Cloud R2 Setup Modal Logic
+    function openCloudR2SetupModal() {
+        const netApiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/networkMode.php'
+            : 'api/networkMode.php';
+
+        $.ajax({
+            url: netApiUrl,
+            method: 'GET',
+            data: { _t: Date.now() },
+            dataType: 'json'
+        }).done(function (data) {
+            if (data) {
+                $('input[name="qr_delivery_mode"][value="' + (data.mode || 'cloud_web') + '"]').prop('checked', true).trigger('change');
+                if (data.cloud_url) {
+                    $('#input-cloud-url').val(data.cloud_url);
+                }
+                if (data.cloud_key) {
+                    $('#input-cloud-key').val(data.cloud_key);
+                }
+                if (data.venue_ip) {
+                    $('#input-venue-ip').val(data.venue_ip);
+                }
+            }
+            $('#cloudR2SetupModal').removeClass('hidden').attr('aria-hidden', 'false');
+        });
+    }
+
     $(document).on('click', '#btn-toggle-qr-settings', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        keepAlive();
         closeQrDeliveryModal();
         openCloudR2SetupModal();
     });
 
+    $(document).on('click', '#r2-setup-btn-close, #r2-setup-backdrop', function (e) {
+        e.preventDefault();
+        $('#cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
+    });
+
     $(document).on('change', 'input[name="qr_delivery_mode"]', function () {
-        keepAlive();
         const val = $(this).val();
         $('#qr-fields-venue').toggle(val === 'venue_wifi');
         $('#qr-fields-cloud').toggle(val === 'cloud_web');
     });
 
-    $(document).on('click', '#btn-test-cloud-r2', function (e) {
-        e.preventDefault();
-        keepAlive();
-        const cloudUrl = ($('#input-cloud-url').val() || '').trim();
-        const postData = {
-            action: 'test_cloud',
-            cloud_url: cloudUrl
-        };
-        if (typeof csrf !== 'undefined' && csrf.key) {
-            postData[csrf.key] = csrf.token;
-        }
-        const netApiUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
-            ? environment.publicFolders.api + '/networkMode.php'
-            : 'api/networkMode.php';
-
-        $('#qr-net-save-msg').css('color', '#0284c7').text('Đang kiểm tra kết nối R2...');
-        $.ajax({
-            url: netApiUrl,
-            method: 'POST',
-            data: postData,
-            dataType: 'json'
-        }).done(function (res) {
-            if (res && res.success) {
-                $('#qr-net-save-msg').css('color', '#10b981').text(res.message || 'Kết nối Cloud R2 thành công ✓');
-            } else {
-                $('#qr-net-save-msg').css('color', '#ef4444').text('Lỗi: ' + (res && res.error ? res.error : 'Không thể kết nối'));
-            }
-        }).fail(function () {
-            $('#qr-net-save-msg').css('color', '#ef4444').text('Không thể kiểm tra kết nối');
-        });
-    });
-
     $(document).on('click', '#btn-save-qr-network', function (e) {
         e.preventDefault();
-        keepAlive();
         const selectedMode = $('input[name="qr_delivery_mode"]:checked').val() || 'cloud_web';
         const postData = {
             action: 'save',
             mode: selectedMode,
-            venue_ip: ($('#input-venue-ip').val() || '').trim(),
             cloud_url: ($('#input-cloud-url').val() || '').trim(),
-            cloud_api_key: ($('#input-cloud-key').val() || 'tys_secret_key_2026').trim()
+            cloud_key: ($('#input-cloud-key').val() || '').trim(),
+            venue_ip: ($('#input-venue-ip').val() || '').trim()
         };
         if (typeof csrf !== 'undefined' && csrf.key) {
             postData[csrf.key] = csrf.token;
@@ -1028,7 +529,6 @@
             ? environment.publicFolders.api + '/networkMode.php'
             : 'api/networkMode.php';
 
-        $('#qr-net-save-msg').css('color', '#0284c7').text('Đang lưu...');
         $.ajax({
             url: netApiUrl,
             method: 'POST',
@@ -1036,8 +536,7 @@
             dataType: 'json'
         }).done(function (res) {
             if (res && res.success) {
-                const modeLabel = selectedMode === 'venue_wifi' ? 'Wi-Fi Nội Bộ (LAN)' : 'Cloud R2';
-                $('#qr-net-save-msg').css('color', '#10b981').text('Đã lưu chế độ ' + modeLabel + ' ✓');
+                $('#qr-net-save-msg').text('Đã lưu cấu hình ✓');
                 setTimeout(function () {
                     $('#cloudR2SetupModal').addClass('hidden').attr('aria-hidden', 'true');
                 }, 800);
@@ -1045,18 +544,76 @@
         });
     });
 
+    // Background Cloud Sync Trigger
+    function triggerBackgroundCloudSync(sessionIdOrFilename, callback) {
+        if (!sessionIdOrFilename) {
+            if (typeof callback === 'function') callback(null);
+            return;
+        }
+        const syncUrl = (typeof environment !== 'undefined' && environment.publicFolders && environment.publicFolders.api)
+            ? environment.publicFolders.api + '/syncRunner.php'
+            : 'api/syncRunner.php';
+
+        const cleanSession = getSessionId(sessionIdOrFilename);
+        const postData = {
+            action: 'sync_session',
+            session_id: cleanSession
+        };
+        if (typeof csrf !== 'undefined' && csrf.key) {
+            postData[csrf.key] = csrf.token;
+        }
+
+        $.ajax({
+            url: syncUrl,
+            method: 'POST',
+            data: postData,
+            dataType: 'json',
+            timeout: 8000
+        }).done(function (res) {
+            if (typeof callback === 'function') callback(res);
+        }).fail(function () {
+            if (typeof callback === 'function') callback(null);
+        });
+    }
+
+    function keepAlive() {
+        if (typeof photoBooth !== 'undefined' && typeof photoBooth.resetTimeOut === 'function') {
+            photoBooth.resetTimeOut();
+        }
+    }
+
+    // Result stage observer
+    let lastActiveImg = null;
+    const observer = new MutationObserver(function (mutations) {
+        mutations.forEach(function (mutation) {
+            if (mutation.attributeName === 'class' || mutation.attributeName === 'data-img') {
+                if ($resultPage.hasClass('stage--active')) {
+                    const currentImg = $resultPage.attr('data-img') || extractFilename();
+                    if (currentImg && currentImg !== lastActiveImg) {
+                        lastActiveImg = currentImg;
+                        initResultDockForImage();
+                    }
+                } else {
+                    lastActiveImg = null;
+                }
+            }
+        });
+    });
+
     $(document).ready(function () {
-        // Attach modals directly to body so they work on both Start Screen and Result Screen
         $('#confirmSuccessModal, #qrDeliveryModal, #cloudR2SetupModal').appendTo(document.body);
 
         if ($resultPage.length) {
             observer.observe($resultPage[0], { attributes: true, attributeFilter: ['class', 'data-img'] });
             if ($resultPage.hasClass('stage--active')) {
-                initPresetBarForImage();
+                initResultDockForImage();
             }
         }
     });
 
+    // Public API hooks
+    window.updatePairQueueUi = updatePairQueueUi;
+    window.refreshPairQueueStatus = refreshPairQueueStatus;
     window.triggerBackgroundCloudSync = triggerBackgroundCloudSync;
 
 })(jQuery);

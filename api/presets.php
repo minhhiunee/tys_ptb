@@ -232,8 +232,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $poseFrameSequences,
                                     $layoutData,
                                     $gifTargetPath,
-                                    210,
-                                    360,
+                                    180,
+                                    1350,
                                     $presetId,
                                     $amount,
                                     $baseSourceFile
@@ -256,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             }
                         }
                         if (!empty($poseAbsPaths)) {
-                            $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 210, 360, $presetId, $amount);
+                            $gifBaked = $gifProcessor->createAnimatedGif($poseAbsPaths, $gifTargetPath, 180, 1080, $presetId, $amount);
                         }
                     }
                 }

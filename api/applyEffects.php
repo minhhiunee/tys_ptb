@@ -744,11 +744,24 @@ try {
     $logger->warning('SyncQueue enqueue warning: ' . $syncErr->getMessage());
 }
 
+// Register completed PTB4 strip into the 2-strip pair print queue (Canon SELPHY CP1500)
+$printPairStatus = null;
+try {
+    $printPairStatus = \Photobooth\Service\PrintPairService::getInstance()->registerStrip(
+        (string) $vars['fileName'],
+        (string) ($metaData['layout'] ?? $config['collage']['layout'] ?? ''),
+        (string) ($metaData['frame'] ?? '')
+    );
+} catch (\Throwable $pairErr) {
+    $logger->warning('PrintPairService register warning: ' . $pairErr->getMessage());
+}
+
 $data = [
     'file' => $vars['fileName'],
     'images' => $vars['srcImages'],
     'gif' => $vars['gifFileName'] ?? null,
     'session_id' => $vars['sessionId'] ?? null,
+    'print_pair' => $printPairStatus,
 ];
 $logger->debug('effects applied', $data);
 echo json_encode($data);

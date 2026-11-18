@@ -125,13 +125,61 @@ def find_photobooth_browser():
     user32.EnumWindows(cb_proto(enum_browser_cb), 0)
     return found
 
+def force_foreground(hwnd):
+    if not hwnd or not user32.IsWindow(hwnd):
+        return False
+    try:
+        if user32.IsIconic(hwnd):
+            user32.ShowWindow(hwnd, 9) # SW_RESTORE
+        fore_hwnd = user32.GetForegroundWindow()
+        fore_thread = user32.GetWindowThreadProcessId(fore_hwnd, None) if fore_hwnd else 0
+        target_thread = user32.GetWindowThreadProcessId(hwnd, None)
+        cur_thread = kernel32.GetCurrentThreadId()
+
+        if fore_thread and fore_thread != cur_thread:
+            user32.AttachThreadInput(cur_thread, fore_thread, True)
+        if target_thread and target_thread != cur_thread:
+            user32.AttachThreadInput(cur_thread, target_thread, True)
+
+        user32.keybd_event(0x12, 0, 0, 0) # Alt key down
+        user32.BringWindowToTop(hwnd)
+        user32.SetForegroundWindow(hwnd)
+        user32.keybd_event(0x12, 0, 2, 0) # Alt key up
+
+        if fore_thread and fore_thread != cur_thread:
+            user32.AttachThreadInput(cur_thread, fore_thread, False)
+        if target_thread and target_thread != cur_thread:
+            user32.AttachThreadInput(cur_thread, target_thread, False)
+        return True
+    except Exception as e:
+        print(f"[C1 Companion] force_foreground error: {e}")
+        return False
+
 def focus_browser(browser_hwnd=None):
     if not browser_hwnd or not user32.IsWindow(browser_hwnd):
         browser_hwnd = find_photobooth_browser()
     if browser_hwnd and user32.IsWindow(browser_hwnd):
-        user32.keybd_event(0x12, 0, 0, 0) # Alt key down to unlock SetForegroundWindow
-        user32.SetForegroundWindow(browser_hwnd)
-        user32.keybd_event(0x12, 0, 2, 0) # Alt key up
+        force_foreground(browser_hwnd)
+
+def send_shutter_pulse(wins, target_hwnd):
+    force_foreground(target_hwnd)
+    time.sleep(0.06)
+    if wins.get('live_view'):
+        # In Live View, Spacebar triggers capture via both keybd_event and PostMessage
+        user32.keybd_event(VK_SPACE, 0, 0, 0)
+        user32.PostMessageW(target_hwnd, WM_KEYDOWN, VK_SPACE, 0)
+        time.sleep(0.06)
+        user32.keybd_event(VK_SPACE, 0, 2, 0)
+        user32.PostMessageW(target_hwnd, WM_KEYUP, VK_SPACE, 0)
+        print("[C1 Companion] Sent SPACEBAR shutter pulse to Live View")
+    else:
+        # In Main window, F7 triggers capture
+        user32.keybd_event(VK_F7, 0, 0, 0)
+        user32.PostMessageW(target_hwnd, WM_KEYDOWN, VK_F7, 0)
+        time.sleep(0.06)
+        user32.keybd_event(VK_F7, 0, 2, 0)
+        user32.PostMessageW(target_hwnd, WM_KEYUP, VK_F7, 0)
+        print("[C1 Companion] Sent F7 shutter pulse to Main window")
 
 def trigger_capture_and_ingest(trigger_data, trigger_file):
     print(f"[C1 Companion] Trigger received for job: {trigger_data.get('job_id')}")
@@ -149,32 +197,20 @@ def trigger_capture_and_ingest(trigger_data, trigger_file):
     # Snapshot existing files in Capture directory
     before_files = set(os.listdir(CAPTURE_DIR)) if os.path.exists(CAPTURE_DIR) else set()
     
-    # Send Shutter trigger to Capture One
-    if user32.IsIconic(target_hwnd):
-        user32.ShowWindow(target_hwnd, 9)
-    user32.SetForegroundWindow(target_hwnd)
-    time.sleep(0.08)
-    
-    if wins.get('live_view'):
-        # In Live View, Spacebar triggers capture
-        user32.keybd_event(VK_SPACE, 0, 0, 0)
-        time.sleep(0.05)
-        user32.keybd_event(VK_SPACE, 0, 2, 0)
-        print("[C1 Companion] Sent SPACEBAR to Live View window")
-    else:
-        # In Main window, F7 triggers capture
-        user32.keybd_event(VK_F7, 0, 0, 0)
-        time.sleep(0.05)
-        user32.keybd_event(VK_F7, 0, 2, 0)
-        print("[C1 Companion] Sent F7 to Main window")
+    # Send 1st Shutter trigger pulse to Capture One
+    send_shutter_pulse(wins, target_hwnd)
 
     # Immediately restore the browser window so Live View never covers the Photobooth screen
     focus_browser(browser_hwnd)
 
-    # Wait for new file to arrive in Capture folder (up to 8s)
+    # Wait for new file to arrive in Capture folder (up to 15s) with automatic retry pulses
     new_capture_file = None
     start_wait = time.time()
-    while time.time() - start_wait < 8.0:
+    retry_1_sent = False
+    retry_2_sent = False
+
+    while time.time() - start_wait < 15.0:
+        elapsed = time.time() - start_wait
         time.sleep(0.1)
         current_files = set(os.listdir(CAPTURE_DIR))
         diff = current_files - before_files
@@ -184,10 +220,22 @@ def trigger_capture_and_ingest(trigger_data, trigger_file):
             image_diff.sort(key=lambda fn: os.path.getmtime(os.path.join(CAPTURE_DIR, fn)), reverse=True)
             candidate = os.path.join(CAPTURE_DIR, image_diff[0])
             # Ensure file is done writing
-            time.sleep(0.2)
+            time.sleep(0.25)
             if os.path.exists(candidate) and os.path.getsize(candidate) > 100_000:
                 new_capture_file = candidate
                 break
+
+        # If camera didn't fire on 1st pulse (e.g. initial standby / focus acquisition lag), send retry pulse at 1.3s and 2.8s
+        if not retry_1_sent and elapsed >= 1.3:
+            print("[C1 Companion] 1.3s passed without capture -> sending 2nd shutter retry pulse...")
+            send_shutter_pulse(wins, target_hwnd)
+            focus_browser(browser_hwnd)
+            retry_1_sent = True
+        elif not retry_2_sent and elapsed >= 2.8:
+            print("[C1 Companion] 2.8s passed without capture -> sending 3rd shutter retry pulse...")
+            send_shutter_pulse(wins, target_hwnd)
+            focus_browser(browser_hwnd)
+            retry_2_sent = True
 
     if not new_capture_file:
         print("[C1 Companion] Timeout: No new capture file received from Canon")

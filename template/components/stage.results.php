@@ -41,14 +41,16 @@ if ($config['ui']['result_buttons']) {
     }
 }
 
-if ($config['print']['from_result']) {
-    echo ComponentUtility::renderButton('print', $config['icons']['print'], 'printbtn');
-}
-if ($config['filters']['enabled']) {
-    echo ComponentUtility::renderButton('selectFilter', $config['icons']['filter'], 'imageFilter');
-}
-if ($config['picture']['allow_delete']) {
-    echo ComponentUtility::renderButton('delete', $config['icons']['delete'], 'deletebtn');
+if ($config['ui']['result_buttons']) {
+    if ($config['print']['from_result']) {
+        echo ComponentUtility::renderButton('print', $config['icons']['print'], 'printbtn');
+    }
+    if ($config['filters']['enabled']) {
+        echo ComponentUtility::renderButton('selectFilter', $config['icons']['filter'], 'imageFilter');
+    }
+    if ($config['picture']['allow_delete']) {
+        echo ComponentUtility::renderButton('delete', $config['icons']['delete'], 'deletebtn');
+    }
 }
 
 echo '</div>';

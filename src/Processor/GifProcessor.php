@@ -33,8 +33,8 @@ class GifProcessor
         array $poseFrameSequences,
         array $layoutData,
         string $targetGifPath,
-        int $delayMs = 210,
-        int $maxDimension = 480,
+        int $delayMs = 180,
+        int $maxDimension = 1350,
         ?string $presetId = null,
         int $presetAmount = 100,
         ?string $baseCollageImagePath = null
@@ -46,13 +46,21 @@ class GifProcessor
             return false;
         }
 
-        $scale = min(1.0, $maxDimension / max($fullW, $fullH));
+        // Ensure vertical photo strips (1:3 aspect ratio like 984x2913) maintain Full-HD 1080p height
+        $effectiveMaxDim = ($fullH > $fullW * 1.8) ? max(1080, min(1200, $maxDimension)) : max(900, min(1080, $maxDimension));
+        $scale = min(1.0, $effectiveMaxDim / max($fullW, $fullH));
         $outW = max(1, (int) round($fullW * $scale));
         $outH = max(1, (int) round($fullH * $scale));
 
         $presetService = (!empty($presetId) && $presetId !== 'original' && $presetId !== 'none' && $presetAmount > 0)
             ? PresetService::getInstance()
             : null;
+
+        $lockFile = $targetGifPath . '.lock';
+        $lockFp = @fopen($lockFile, 'c+');
+        if ($lockFp) {
+            @flock($lockFp, LOCK_EX);
+        }
 
         $tempSynthFiles = [];
         $tempPresetFiles = [];
@@ -74,7 +82,7 @@ class GifProcessor
                     }
                 }
                 if (count($validSeq) === 1) {
-                    $syn = $this->synthesizeTimelapseFromSingleFrame($validSeq[0], $maxDimension);
+                    $syn = $this->synthesizeTimelapseFromSingleFrame($validSeq[0], $effectiveMaxDim);
                     if (!empty($syn)) {
                         foreach ($syn as $sf) {
                             $tempSynthFiles[] = $sf;
@@ -92,7 +100,7 @@ class GifProcessor
                 return false;
             }
 
-            $totalTicks = max(5, min(8, $maxSeqCount));
+            $totalTicks = max(8, min(12, $maxSeqCount));
             // Preserve ~2x playback speed when source sequence exceeds the 14-tick cap
             $effectiveDelayMs = ($maxSeqCount > $totalTicks && $totalTicks > 0)
                 ? min(500, (int) round($delayMs * ($maxSeqCount / $totalTicks)))
@@ -255,7 +263,7 @@ class GifProcessor
                 }
 
                 $tickPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_framed_tick_%02d_%s.jpg', $t, uniqid());
-                if (imagejpeg($canvas, $tickPath, 88)) {
+                if (imagejpeg($canvas, $tickPath, 96)) {
                     $tempTickFiles[] = $tickPath;
                     // Hold the final snapped pose for 1 extra tick at the end of the speedup loop
                     if ($t === $totalTicks - 1) {
@@ -302,6 +310,11 @@ class GifProcessor
                     @unlink($f);
                 }
             }
+            if (isset($lockFp) && is_resource($lockFp)) {
+                @flock($lockFp, LOCK_UN);
+                @fclose($lockFp);
+                @unlink($lockFile);
+            }
         }
     }
 
@@ -311,7 +324,7 @@ class GifProcessor
      * @param string[] $sourceFrames Ordered list of image file paths
      * @param string $targetGifPath Output path for the animated .gif
      * @param int $delayMs Frame duration in milliseconds (default: 450ms)
-     * @param int $maxDimension Maximum width/height in pixels (default: 720px)
+     * @param int $maxDimension Maximum width/height in pixels (default: 1080px)
      * @param string|null $presetId Optional color preset ID to apply to each frame
      * @param int $presetAmount Optional preset intensity (0-100)
      * @return bool True on success
@@ -319,8 +332,8 @@ class GifProcessor
     public function createAnimatedGif(
         array $sourceFrames,
         string $targetGifPath,
-        int $delayMs = 210,
-        int $maxDimension = 480,
+        int $delayMs = 180,
+        int $maxDimension = 1080,
         ?string $presetId = null,
         int $presetAmount = 100
     ): bool {
@@ -528,7 +541,6 @@ class GifProcessor
 
             foreach ($framePaths as $path) {
                 $frame = new \Imagick($path);
-                $frame->setImageFormat('gif');
                 $frame->setImageDelay($ticks);
                 $frame->setImageDispose(\Imagick::DISPOSE_NONE);
                 $animation->addImage($frame);
@@ -537,10 +549,17 @@ class GifProcessor
             }
 
             $animation->setImageIterations(0); // Infinite loop
-            // Shared 64-color palette + delta layer optimization cuts GIF size and speeds Cloud upload
-            $animation->quantizeImages(64, \Imagick::COLORSPACE_RGB, 0, false, false);
+            // Full 256-color sRGB palette (treeDepth=4) + delta layer optimization for sharp, rich skin tones
+            $animation->quantizeImages(256, \Imagick::COLORSPACE_SRGB, 4, false, false);
             $optimized = $animation->optimizeImageLayers();
-            $result = $optimized->writeImages($targetGifPath, true);
+            $optimized->setFormat('gif');
+            $tmpTarget = $targetGifPath . '.tmp.' . uniqid('', true) . '.gif';
+            $result = $optimized->writeImages($tmpTarget, true);
+            if ($result && is_file($tmpTarget)) {
+                @rename($tmpTarget, $targetGifPath);
+            } elseif (is_file($tmpTarget)) {
+                @unlink($tmpTarget);
+            }
 
             $optimized->clear();
             $optimized->destroy();

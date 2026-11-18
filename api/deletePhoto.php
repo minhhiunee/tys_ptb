@@ -162,6 +162,13 @@ if (!$logData['success'] || $config['dev']['loglevel'] > 1) {
     $logger->debug('data', $logData);
 }
 
+// Remove from 2-strip print pair queue if present
+try {
+    \Photobooth\Service\PrintPairService::getInstance()->removeStrip($file);
+} catch (\Throwable $e) {
+    // ignore
+}
+
 $logString = json_encode($logData);
 echo $logString;
 exit();
