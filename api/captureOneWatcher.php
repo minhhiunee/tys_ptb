@@ -9,7 +9,7 @@ if (php_sapi_name() !== 'cli') {
 require_once __DIR__ . '/../vendor/autoload.php';
 
 if (!function_exists('checkCsrfOrFail')) {
-    function checkCsrfOrFail($source): void
+    function checkCsrfOrFail(array $source = [], string $key = 'csrf'): void
     {
     }
 }
@@ -40,7 +40,7 @@ while (true) {
 
     try {
         $scanResult = $c1Service->scanAndIngestOutputFolder();
-        if (($scanResult['ingested'] ?? 0) > 0) {
+        if ($scanResult['ingested'] > 0) {
             $logger->info('Capture One watcher ingested batch', $scanResult);
         }
     } catch (\Throwable $e) {

@@ -28,7 +28,7 @@ if ($image) {
 
     if (!is_file($path)) {
         http_response_code(404);
-        echo $image . ' does not exist.';
+        echo htmlspecialchars($basename, ENT_QUOTES, 'UTF-8') . ' does not exist.';
         exit();
     }
 
@@ -40,7 +40,7 @@ if ($image) {
         }
         $extension = $pathinfo['extension'];
         if ($config['download']['thumbs'] && $extension !== 'mp4' && $extension !== 'gif') {
-            $thumb = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $image;
+            $thumb = FolderEnum::THUMBS->absolute() . DIRECTORY_SEPARATOR . $basename;
             if (is_file($thumb)) {
                 $path = $thumb;
             }
@@ -57,11 +57,11 @@ if ($image) {
 
         header('Content-Type: ' . $contentType);
         header('Content-Length: ' . filesize($path));
-        header('Content-Disposition: ' . ($forceDownload ? 'attachment' : 'inline') . '; filename="photobooth-' . $image . '"');
+        header('Content-Disposition: ' . ($forceDownload ? 'attachment' : 'inline') . '; filename="photobooth-' . $basename . '"');
         readfile($path);
     } catch (\Exception $e) {
         http_response_code(500);
-        echo 'Error downloading the file ' . $image;
+        echo 'Error downloading the file ' . htmlspecialchars($basename, ENT_QUOTES, 'UTF-8');
         if ($config['dev']['loglevel'] > 1) {
             echo $e->getMessage();
         }

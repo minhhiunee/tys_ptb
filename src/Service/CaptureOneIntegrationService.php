@@ -230,9 +230,11 @@ class CaptureOneIntegrationService
             'updated_at' => time(),
         ];
 
+        $isSelfTest = !empty($options['self_test']);
+
         // Clear any stale output or trigger files from previous captures/retakes for this job
         $staleOutput = $outputDir . DIRECTORY_SEPARATOR . $inputFileName;
-        if (is_file($staleOutput)) {
+        if (!$isSelfTest && is_file($staleOutput)) {
             @unlink($staleOutput);
         }
         $staleDone = $outputDir . DIRECTORY_SEPARATOR . $jobId . '.done.json';
@@ -246,20 +248,29 @@ class CaptureOneIntegrationService
 
         $this->upsertJob($jobId, $jobRecord);
 
-        // In capture_one_owns_camera mode, write a trigger manifest so host companion fires the camera shutter
-        if ($this->getCameraMode() === 'capture_one_owns_camera') {
-            $triggerManifestPath = $inputDir . DIRECTORY_SEPARATOR . $jobId . '.trigger.json';
-            @file_put_contents(
-                $triggerManifestPath,
-                json_encode($jobRecord, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-            );
-        } elseif ($this->getCameraMode() === 'photobooth_owns_camera' && is_file($poseFilePath)) {
-            // In photobooth_owns_camera mode, drop the captured file + manifest into data/c1_input/
-            @copy($poseFilePath, $inputFilePath);
-            @file_put_contents(
-                $jobManifestPath,
-                json_encode($jobRecord, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
-            );
+        // In capture_one_owns_camera mode, write a trigger manifest atomically (.tmp -> rename)
+        // so host companion never sees a 0-byte file on Docker-Windows bind mounts.
+        if (!$isSelfTest) {
+            if ($this->getCameraMode() === 'capture_one_owns_camera') {
+                $triggerManifestPath = $inputDir . DIRECTORY_SEPARATOR . $jobId . '.trigger.json';
+                $triggerTmpPath = $inputDir . DIRECTORY_SEPARATOR . '.' . $jobId . '.trigger.tmp';
+                $encodedTrigger = json_encode($jobRecord, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                if (@file_put_contents($triggerTmpPath, $encodedTrigger, LOCK_EX) !== false) {
+                    @rename($triggerTmpPath, $triggerManifestPath);
+                } else {
+                    @file_put_contents($triggerManifestPath, $encodedTrigger);
+                }
+            } elseif ($this->getCameraMode() === 'photobooth_owns_camera' && is_file($poseFilePath)) {
+                // In photobooth_owns_camera mode, drop the captured file + manifest into data/c1_input/
+                @copy($poseFilePath, $inputFilePath);
+                $jobTmpPath = $inputDir . DIRECTORY_SEPARATOR . '.' . $jobId . '.job.tmp';
+                $encodedJob = json_encode($jobRecord, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+                if (@file_put_contents($jobTmpPath, $encodedJob, LOCK_EX) !== false) {
+                    @rename($jobTmpPath, $jobManifestPath);
+                } else {
+                    @file_put_contents($jobManifestPath, $encodedJob);
+                }
+            }
         }
 
         // Determine effective wait budget:
@@ -282,6 +293,10 @@ class CaptureOneIntegrationService
                 $this->scanAndIngestOutputFolder();
                 $currentJob = $this->getJob($jobId);
                 if (is_array($currentJob) && ($currentJob['status'] ?? '') === 'completed') {
+                    // In capture_one_owns_camera mode, update rawBackupPath with the real 24MP camera photo
+                    if ($this->getCameraMode() === 'capture_one_owns_camera' && $rawBackupPath !== null && is_file($poseFilePath)) {
+                        @copy($poseFilePath, $rawBackupPath);
+                    }
                     $elapsedMs = round((hrtime(true) - $startNs) / 1e6, 1);
                     $this->recordJobLatency($elapsedMs, false);
                     return [
@@ -424,7 +439,7 @@ class CaptureOneIntegrationService
             $assoc = $ingestionService->resolveSessionAndPose($entry, $jobs);
             $jobId = $assoc['job_id'];
             $sessionId = (string) ($assoc['session_id'] ?? 'unknown');
-            $poseIndex = (int) ($assoc['pose_index'] ?? 0);
+            $poseIndex = (int) $assoc['pose_index'];
 
             // Skip and clean un-associated external files (e.g. Capture One recipe background exports like "Photobooth 00043.jpg")
             if ($jobId === null && empty($assoc['session_id'])) {
@@ -647,8 +662,11 @@ class CaptureOneIntegrationService
 
         // Create a synthetic test capture and a simulated Capture One processed export
         $im = imagecreatetruecolor(800, 600);
-        $bg = imagecolorallocate($im, 42, 68, 112);
-        $fg = imagecolorallocate($im, 240, 210, 150);
+        if (!$im instanceof \GdImage) {
+            throw new \RuntimeException('Failed to allocate diagnostic test image.');
+        }
+        $bg = (int) imagecolorallocate($im, 42, 68, 112);
+        $fg = (int) imagecolorallocate($im, 240, 210, 150);
         imagefill($im, 0, 0, $bg);
         imagestring($im, 5, 40, 280, 'Capture One Self-Test ' . $sessionId, $fg);
         imagejpeg($im, $targetTmp, 90);
@@ -661,6 +679,7 @@ class CaptureOneIntegrationService
         $res = $this->processCapturedPose($targetTmp, $sessionId, $poseIdx, [
             'force_wait_ms' => 1500,
             'style' => $this->getDefaultStyle(),
+            'self_test' => true,
         ]);
 
         // Test idempotency by dropping the exact same output file a second time
@@ -679,9 +698,9 @@ class CaptureOneIntegrationService
 
         $totalMs = round((hrtime(true) - $t0) / 1e6, 1);
         return [
-            'passed' => !empty($res['success']) && ($res['provider'] ?? '') === 'capture_one' && ($dupScan['duplicates_skipped'] ?? 0) >= 1,
+            'passed' => !empty($res['success']) && $res['provider'] === 'capture_one' && $dupScan['duplicates_skipped'] >= 1,
             'ingestion_result' => $res,
-            'idempotency_duplicate_skipped' => ($dupScan['duplicates_skipped'] ?? 0) >= 1,
+            'idempotency_duplicate_skipped' => $dupScan['duplicates_skipped'] >= 1,
             'total_self_test_ms' => $totalMs,
         ];
     }
@@ -722,7 +741,7 @@ class CaptureOneIntegrationService
         return is_array($decoded) ? array_replace_recursive($default, $decoded) : $default;
     }
 
-    protected function saveQueueData(array $data): void
+    public function saveQueueData(array $data): void
     {
         // Keep jobs & processed_hashes bounded to prevent unbounded growth during multi-day events
         if (isset($data['jobs']) && is_array($data['jobs']) && count($data['jobs']) > 120) {

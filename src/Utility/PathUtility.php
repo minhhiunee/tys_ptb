@@ -161,9 +161,12 @@ class PathUtility
     {
         $docRootRaw = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
         if (!isset(self::$baseUrlCache[$docRootRaw])) {
-            $documentRoot = (string) realpath($docRootRaw);
+            $documentRoot = rtrim((string) realpath($docRootRaw), '/\\');
             $rootPath = self::getRootPath();
-            self::$baseUrlCache[$docRootRaw] = self::fixFilePath(str_replace($documentRoot, '', $rootPath) . '/');
+            $relative = ($documentRoot !== '' && str_starts_with($rootPath, $documentRoot))
+                ? substr($rootPath, strlen($documentRoot))
+                : $rootPath;
+            self::$baseUrlCache[$docRootRaw] = self::fixFilePath('/' . ltrim($relative, '/\\') . '/');
         }
 
         return self::$baseUrlCache[$docRootRaw];

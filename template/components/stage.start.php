@@ -96,7 +96,7 @@ $tramTinhHaUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha.png');
             color: #F5F3FF;
             border: 1px solid rgba(167, 139, 250, 0.34);
             border-radius: 999px;
-            font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: "Be Vietnam Pro", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 13.5px;
             font-weight: 600;
             letter-spacing: -0.01em;
@@ -239,7 +239,7 @@ $tramTinhHaUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha.png');
             background: rgba(56, 189, 248, 0.12);
             border: 1px solid rgba(125, 211, 252, 0.34);
             color: #E0F2FE;
-            font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-family: "Be Vietnam Pro", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: clamp(11px, 1.15vw, 13.5px);
             font-weight: 700;
             letter-spacing: 0.11em;
@@ -303,7 +303,7 @@ $tramTinhHaUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha.png');
         }
 
         .stage--start .stage-start__actions .button .button--label {
-            font-family: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+            font-family: "Be Vietnam Pro", "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
             font-size: clamp(0.9rem, 1.1vw, 1.05rem) !important;
             font-weight: 700 !important;
             letter-spacing: 0.02em !important;

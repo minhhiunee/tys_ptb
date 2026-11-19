@@ -369,6 +369,9 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
   <title>TRẠM TINH HÀ • Lưu Ảnh Kỷ Niệm</title>
   <link rel="icon" type="image/png" sizes="64x64" href="/event-assets/favicon.png" />
   <link rel="apple-touch-icon" sizes="180x180" href="/event-assets/logo.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Outfit:wght@500;600;700;800;900&display=swap" rel="stylesheet">
   <style>
     :root {
       --bg-deep: #07041A;
@@ -381,7 +384,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       --emerald-2: #059669;
       --cyan-1: #38BDF8;
       --violet-1: #818CF8;
-      --font-main: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "SF Pro Display", Roboto, "Segoe UI", sans-serif;
+      --font-main: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --font-heading: "Outfit", "Be Vietnam Pro", sans-serif;
       --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
       --top-pad: max(8px, env(safe-area-inset-top));
       --bottom-pad: max(8px, env(safe-area-inset-bottom));
@@ -1061,17 +1065,17 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
               if (params.get('tab') === 'gif') {
                 setActiveTab('gif');
               }
-            } else if (pollCount < 30) {
+            } else if (pollCount < 120) {
               pollCount++;
-              setTimeout(checkGifUpdateSilently, 2000);
+              setTimeout(checkGifUpdateSilently, 2500);
             }
             return;
           }
           pollCount++;
-          if (pollCount <= 25) {
-            loadingTitle.textContent = 'Đang đồng bộ ảnh từ buồng chụp...';
-            loadingDesc.textContent = 'Vui lòng giữ màn hình này trong giây lát (' + pollCount + ').';
-            setTimeout(fetchSession, 1500);
+          if (pollCount <= 120) {
+            loadingTitle.textContent = 'Đang tải ảnh gốc & GIF chất lượng cao từ buồng chụp...';
+            loadingDesc.textContent = 'Bạn có thể giữ màn hình này hoặc mở lại sau ít phút (' + pollCount + '/120).';
+            setTimeout(fetchSession, 2500);
           } else {
             loadingTitle.textContent = 'Chưa tìm thấy ảnh trên đám mây';
             loadingDesc.textContent = 'Phiên chụp "' + sessionId + '" chưa được đồng bộ hoặc đã hết hạn lưu trữ.';
@@ -1079,8 +1083,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
           }
         } catch (err) {
           pollCount++;
-          if (pollCount <= 15) {
-            setTimeout(fetchSession, 2000);
+          if (pollCount <= 120) {
+            setTimeout(fetchSession, 2500);
           } else {
             loadingTitle.textContent = 'Không thể kết nối máy chủ';
             loadingDesc.textContent = 'Vui lòng kiểm tra kết nối 4G/WiFi và tải lại trang.';
@@ -1102,9 +1106,9 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
             if (params.get('tab') === 'gif') {
               setActiveTab('gif');
             }
-          } else if (pollCount < 30) {
+          } else if (pollCount < 120) {
             pollCount++;
-            setTimeout(checkGifUpdateSilently, 2000);
+            setTimeout(checkGifUpdateSilently, 2500);
           }
         } catch (_) {}
       }

@@ -33,8 +33,8 @@ class GifProcessor
         array $poseFrameSequences,
         array $layoutData,
         string $targetGifPath,
-        int $delayMs = 180,
-        int $maxDimension = 1350,
+        int $delayMs = 140,
+        int $maxDimension = 1560,
         ?string $presetId = null,
         int $presetAmount = 100,
         ?string $baseCollageImagePath = null
@@ -46,8 +46,8 @@ class GifProcessor
             return false;
         }
 
-        // Ensure vertical photo strips (1:3 aspect ratio like 984x2913) maintain Full-HD 1080p height
-        $effectiveMaxDim = ($fullH > $fullW * 1.8) ? max(1080, min(1200, $maxDimension)) : max(900, min(1080, $maxDimension));
+        // Ensure vertical photo strips (1:3 aspect ratio like 984x2913) achieve sharp HD+ height (527x1560)
+        $effectiveMaxDim = ($fullH > $fullW * 1.8) ? max(1350, min(1560, $maxDimension)) : max(1080, min(1280, $maxDimension));
         $scale = min(1.0, $effectiveMaxDim / max($fullW, $fullH));
         $outW = max(1, (int) round($fullW * $scale));
         $outH = max(1, (int) round($fullH * $scale));
@@ -100,9 +100,9 @@ class GifProcessor
                 return false;
             }
 
-            $totalTicks = max(8, min(12, $maxSeqCount));
-            // Preserve ~2x playback speed when source sequence exceeds the 14-tick cap
-            $effectiveDelayMs = ($maxSeqCount > $totalTicks && $totalTicks > 0)
+            $totalTicks = max(12, min(18, $maxSeqCount));
+            // Preserve ~2x playback speed when source sequence exceeds the 18-tick cap
+            $effectiveDelayMs = ($maxSeqCount > $totalTicks)
                 ? min(500, (int) round($delayMs * ($maxSeqCount / $totalTicks)))
                 : $delayMs;
 
@@ -117,7 +117,7 @@ class GifProcessor
                         }
                         $poseSeq = $normalizedPoses[$slotIdx % $poseCount];
                         $seqLen = count($poseSeq);
-                        $fIdx = ($totalTicks > 1) ? (int) round(($t / ($totalTicks - 1)) * ($seqLen - 1)) : 0;
+                        $fIdx = (int) round(($t / ($totalTicks - 1)) * ($seqLen - 1));
                         $fIdx = max(0, min($seqLen - 1, $fIdx));
                         $usedFramePaths[$poseSeq[$fIdx]] = true;
                     }
@@ -164,7 +164,7 @@ class GifProcessor
                         if ($scaledFrameImg instanceof \GdImage) {
                             imagealphablending($scaledFrameImg, false);
                             imagesavealpha($scaledFrameImg, true);
-                            $transparent = imagecolorallocatealpha($scaledFrameImg, 0, 0, 0, 127);
+                            $transparent = (int) imagecolorallocatealpha($scaledFrameImg, 0, 0, 0, 127);
                             imagefilledrectangle($scaledFrameImg, 0, 0, $outW, $outH, $transparent);
                             imagecopyresampled(
                                 $scaledFrameImg,
@@ -196,8 +196,9 @@ class GifProcessor
                 }
             }
 
-            // Cache GdImage resources per pose frame path to avoid re-decoding the same frame
-            $gdCache = [];
+            // Cache only the most recent pre-scaled slot tile per slot index to avoid holding 24MP frames in RAM
+            $lastSlotFrame = [];
+            $lastSlotTile = [];
 
             for ($t = 0; $t < $totalTicks; $t++) {
                 $canvas = imagecreatetruecolor($outW, $outH);
@@ -207,7 +208,7 @@ class GifProcessor
                 if ($baseCanvas instanceof \GdImage) {
                     imagecopy($canvas, $baseCanvas, 0, 0, 0, 0, $outW, $outH);
                 } else {
-                    $white = imagecolorallocate($canvas, 255, 255, 255);
+                    $white = (int) imagecolorallocate($canvas, 255, 255, 255);
                     imagefilledrectangle($canvas, 0, 0, $outW, $outH, $white);
                 }
 
@@ -222,19 +223,20 @@ class GifProcessor
 
                     $poseSeq = $normalizedPoses[$slotIdx % count($normalizedPoses)];
                     $seqLen = count($poseSeq);
-                    $fIdx = ($totalTicks > 1) ? (int) round(($t / ($totalTicks - 1)) * ($seqLen - 1)) : 0;
+                    $fIdx = (int) round(($t / ($totalTicks - 1)) * ($seqLen - 1));
                     $fIdx = max(0, min($seqLen - 1, $fIdx));
                     $framePath = $poseSeq[$fIdx];
 
-                    if (!isset($gdCache[$framePath])) {
-                        $loaded = @imagecreatefromjpeg($framePath);
-                        if (!$loaded) {
-                            $loaded = @imagecreatefrompng($framePath);
-                        }
-                        $gdCache[$framePath] = $loaded ?: null;
+                    $tileKey = $dstW . 'x' . $dstH . ':' . $framePath;
+                    if (($lastSlotFrame[$slotIdx] ?? '') === $tileKey && ($lastSlotTile[$slotIdx] ?? null) instanceof \GdImage) {
+                        imagecopy($canvas, $lastSlotTile[$slotIdx], $dstX, $dstY, 0, 0, $dstW, $dstH);
+                        continue;
                     }
 
-                    $srcIm = $gdCache[$framePath];
+                    $srcIm = @imagecreatefromjpeg($framePath);
+                    if (!$srcIm) {
+                        $srcIm = @imagecreatefrompng($framePath);
+                    }
                     if ($srcIm instanceof \GdImage) {
                         $srcW = imagesx($srcIm);
                         $srcH = imagesy($srcIm);
@@ -252,7 +254,24 @@ class GifProcessor
                             $cropX = 0;
                             $cropY = (int) round(($srcH - $cropH) / 2);
                         }
-                        imagecopyresampled($canvas, $srcIm, $dstX, $dstY, $cropX, $cropY, $dstW, $dstH, $cropW, $cropH);
+                        $slotTile = imagecreatetruecolor($dstW, $dstH);
+                        if ($slotTile instanceof \GdImage) {
+                            imagecopyresampled($slotTile, $srcIm, 0, 0, $cropX, $cropY, $dstW, $dstH, $cropW, $cropH);
+                            @imageconvolution($slotTile, [
+                                [0.0, -0.25, 0.0],
+                                [-0.25, 2.0, -0.25],
+                                [0.0, -0.25, 0.0],
+                            ], 1.0, 0.0);
+                            imagecopy($canvas, $slotTile, $dstX, $dstY, 0, 0, $dstW, $dstH);
+                            if (($lastSlotTile[$slotIdx] ?? null) instanceof \GdImage) {
+                                imagedestroy($lastSlotTile[$slotIdx]);
+                            }
+                            $lastSlotFrame[$slotIdx] = $tileKey;
+                            $lastSlotTile[$slotIdx] = $slotTile;
+                        } else {
+                            imagecopyresampled($canvas, $srcIm, $dstX, $dstY, $cropX, $cropY, $dstW, $dstH, $cropW, $cropH);
+                        }
+                        imagedestroy($srcIm);
                     }
                 }
 
@@ -263,19 +282,20 @@ class GifProcessor
                 }
 
                 $tickPath = sys_get_temp_dir() . DIRECTORY_SEPARATOR . sprintf('ptb_framed_tick_%02d_%s.jpg', $t, uniqid());
-                if (imagejpeg($canvas, $tickPath, 96)) {
+                if (imagejpeg($canvas, $tickPath, 100)) {
                     $tempTickFiles[] = $tickPath;
-                    // Hold the final snapped pose for 1 extra tick at the end of the speedup loop
+                    // Hold the final snapped pose (24MP Canon shot) for 2 extra ticks at the end of the speedup loop
                     if ($t === $totalTicks - 1) {
+                        $tempTickFiles[] = $tickPath;
                         $tempTickFiles[] = $tickPath;
                     }
                 }
                 imagedestroy($canvas);
             }
 
-            foreach ($gdCache as $cachedIm) {
-                if ($cachedIm instanceof \GdImage) {
-                    imagedestroy($cachedIm);
+            foreach ($lastSlotTile as $cachedTile) {
+                if ($cachedTile instanceof \GdImage) {
+                    imagedestroy($cachedTile);
                 }
             }
 
@@ -310,7 +330,7 @@ class GifProcessor
                     @unlink($f);
                 }
             }
-            if (isset($lockFp) && is_resource($lockFp)) {
+            if (is_resource($lockFp)) {
                 @flock($lockFp, LOCK_UN);
                 @fclose($lockFp);
                 @unlink($lockFile);
@@ -543,26 +563,23 @@ class GifProcessor
                 $frame = new \Imagick($path);
                 $frame->setImageDelay($ticks);
                 $frame->setImageDispose(\Imagick::DISPOSE_NONE);
+                // Per-frame 256-color sRGB quantization (treeDepth=6 -> Local Color Table) to prevent skin-tone banding
+                $frame->quantizeImage(256, \Imagick::COLORSPACE_SRGB, 6, false, false);
                 $animation->addImage($frame);
                 $frame->clear();
                 $frame->destroy();
             }
 
             $animation->setImageIterations(0); // Infinite loop
-            // Full 256-color sRGB palette (treeDepth=4) + delta layer optimization for sharp, rich skin tones
-            $animation->quantizeImages(256, \Imagick::COLORSPACE_SRGB, 4, false, false);
-            $optimized = $animation->optimizeImageLayers();
-            $optimized->setFormat('gif');
+            $animation->setFormat('gif');
             $tmpTarget = $targetGifPath . '.tmp.' . uniqid('', true) . '.gif';
-            $result = $optimized->writeImages($tmpTarget, true);
+            $result = $animation->writeImages($tmpTarget, true);
             if ($result && is_file($tmpTarget)) {
                 @rename($tmpTarget, $targetGifPath);
             } elseif (is_file($tmpTarget)) {
                 @unlink($tmpTarget);
             }
 
-            $optimized->clear();
-            $optimized->destroy();
             $animation->clear();
             $animation->destroy();
 

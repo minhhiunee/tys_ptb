@@ -61,10 +61,10 @@ echo '</div>';
 
 <style>
 /* ==========================================================================
-   TRẠM TINH HÀ • 90% Screen Live Viewfinder & Capture Frame
+   TRẠM TINH HÀ • Maximized 3:2 Live Viewfinder & Capture Frame
    ========================================================================== */
 :root {
-    --camera-aspect: <?=$comp?>;
+    --camera-aspect: 1.5;
 }
 
 .preview {
@@ -72,7 +72,7 @@ echo '</div>';
     top: 0;
     left: 0;
     width: 100vw;
-    height: 100vh;
+    height: 100dvh;
     pointer-events: none;
     z-index: 1 !important;
     display: flex;
@@ -85,18 +85,18 @@ echo '</div>';
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
-    width: min(90vw, calc(90vh * var(--camera-aspect))) !important;
-    height: min(90vh, calc(90vw / var(--camera-aspect))) !important;
-    max-width: 90vw !important;
-    max-height: 90vh !important;
-    aspect-ratio: var(--camera-aspect) !important;
+    width: min(98vw, calc(97dvh * 1.5)) !important;
+    height: min(97dvh, calc(98vw / 1.5)) !important;
+    max-width: 98vw !important;
+    max-height: 97dvh !important;
+    aspect-ratio: 3 / 2 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
     margin: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
-    border-radius: 24px !important;
+    border-radius: 20px !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -111,7 +111,7 @@ echo '</div>';
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    aspect-ratio: inherit !important;
+    aspect-ratio: 3 / 2 !important;
     background: transparent !important;
 }
 
@@ -125,7 +125,7 @@ echo '</div>';
     max-width: 100% !important;
     max-height: 100% !important;
     object-fit: cover !important;
-    border-radius: 22px !important;
+    border-radius: 18px !important;
     background: #000000 !important;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 
                 0 0 0 2px rgba(167, 139, 250, 0.45), 
@@ -149,10 +149,11 @@ echo '</div>';
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
-    width: min(90vw, calc(90vh * var(--camera-aspect))) !important;
-    height: min(90vh, calc(90vw / var(--camera-aspect))) !important;
-    max-width: 90vw !important;
-    max-height: 90vh !important;
+    width: min(98vw, calc(97dvh * 1.5)) !important;
+    height: min(97dvh, calc(98vw / 1.5)) !important;
+    max-width: 98vw !important;
+    max-height: 97dvh !important;
+    aspect-ratio: 3 / 2 !important;
     object-fit: contain !important;
     pointer-events: none !important;
     z-index: 5 !important;
@@ -166,7 +167,7 @@ echo '</div>';
 
 .stage--loader .stage-inner {
     width: 100vw !important;
-    height: 100vh !important;
+    height: 100dvh !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
@@ -175,17 +176,18 @@ echo '</div>';
 }
 
 .stage--loader .stage-image {
-    width: min(90vw, calc(90vh * var(--camera-aspect))) !important;
-    height: min(90vh, calc(90vw / var(--camera-aspect))) !important;
-    max-width: 90vw !important;
-    max-height: 90vh !important;
+    width: min(98vw, calc(97dvh * 1.5)) !important;
+    height: min(97dvh, calc(98vw / 1.5)) !important;
+    max-width: 98vw !important;
+    max-height: 97dvh !important;
+    aspect-ratio: 3 / 2 !important;
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
-    background-size: contain !important;
+    background-size: cover !important;
     background-position: center center !important;
     background-repeat: no-repeat !important;
-    border-radius: 24px !important;
+    border-radius: 18px !important;
     box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(167, 139, 250, 0.45) !important;
     z-index: 12 !important;
 }
@@ -214,27 +216,16 @@ echo '</div>';
 </style>
 
 <script>
-// Dynamically update --camera-aspect when live video stream metadata is loaded
+// Enforce strict 3:2 aspect ratio (1.5) for camera canvas across Home & Capture screens
 (function() {
-    function updateAspect() {
-        var videoEl = document.getElementById('preview--video');
-        if (videoEl && videoEl.videoWidth && videoEl.videoHeight) {
-            var aspect = (videoEl.videoWidth / videoEl.videoHeight).toFixed(6);
-            document.documentElement.style.setProperty('--camera-aspect', aspect);
-            var container = document.getElementById('preview-container');
-            if (container) {
-                container.style.aspectRatio = aspect;
-            }
+    function enforce3to2Aspect() {
+        document.documentElement.style.setProperty('--camera-aspect', '1.5');
+        var container = document.getElementById('preview-container');
+        if (container) {
+            container.style.aspectRatio = '3 / 2';
         }
     }
-    window.addEventListener('DOMContentLoaded', function() {
-        var videoEl = document.getElementById('preview--video');
-        if (videoEl) {
-            videoEl.addEventListener('loadedmetadata', updateAspect);
-            videoEl.addEventListener('play', updateAspect);
-            videoEl.addEventListener('playing', updateAspect);
-            videoEl.addEventListener('resize', updateAspect);
-        }
-    });
+    enforce3to2Aspect();
+    window.addEventListener('DOMContentLoaded', enforce3to2Aspect);
 })();
 </script>

@@ -162,9 +162,15 @@ if (!$logData['success'] || $config['dev']['loglevel'] > 1) {
     $logger->debug('data', $logData);
 }
 
-// Remove from 2-strip print pair queue if present
+// Remove from 2-strip print pair queue and banquet pending queue if present
 try {
     \Photobooth\Service\PrintPairService::getInstance()->removeStrip($file);
+    $sessionId = pathinfo($file, PATHINFO_FILENAME);
+    \Photobooth\Service\BanquetPrintService::getInstance()->removeBanquetItem($sessionId);
+    $framedFile = FolderEnum::PIPELINE_FRAMED->absolute() . DIRECTORY_SEPARATOR . $file;
+    if (is_file($framedFile)) {
+        @unlink($framedFile);
+    }
 } catch (\Throwable $e) {
     // ignore
 }

@@ -88,6 +88,11 @@ class ApplicationService
         return false;
     }
 
+    public function getLatestRelease(): string
+    {
+        return $this->getVersion();
+    }
+
     public static function getInstance(): self
     {
         if (!isset($GLOBALS[self::class])) {

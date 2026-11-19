@@ -94,6 +94,9 @@ $bgLandscapeUrl = $assetService->getUrl('resources/img/event/bg-landscape-1.jpg'
     <link rel="icon" type="image/png" sizes="64x64" href="<?= htmlspecialchars($favicon64Url, ENT_QUOTES) ?>" />
     <link rel="shortcut icon" href="<?= htmlspecialchars($faviconIcoUrl, ENT_QUOTES) ?>" />
     <link rel="apple-touch-icon" sizes="180x180" href="<?= htmlspecialchars($appleIconUrl, ENT_QUOTES) ?>" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400;1,600&family=Outfit:wght@500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-deep: #07041A;
@@ -107,7 +110,8 @@ $bgLandscapeUrl = $assetService->getUrl('resources/img/event/bg-landscape-1.jpg'
             --emerald-2: #059669;
             --cyan-1: #38BDF8;
             --violet-1: #818CF8;
-            --font-main: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "SF Pro Display", Roboto, "Segoe UI", sans-serif;
+            --font-main: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            --font-heading: "Outfit", "Be Vietnam Pro", sans-serif;
             --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
             --top-pad: max(8px, env(safe-area-inset-top));
             --bottom-pad: max(8px, env(safe-area-inset-bottom));

@@ -6,7 +6,6 @@ require_once '../lib/boot.php';
 
 use Photobooth\Enum\FolderEnum;
 use Photobooth\Image;
-use Photobooth\Processor\PrintProcessor;
 use Photobooth\Service\LoggerService;
 use Photobooth\Service\PrintManagerService;
 use Photobooth\Service\PrintPairService;
@@ -17,12 +16,10 @@ header('Content-Type: application/json');
 
 $logger = LoggerService::getInstance()->getLogger('main');
 $logger->debug(basename($_SERVER['PHP_SELF']));
-$session         = $_SESSION;
 $csrfKey         = 'csrf';
 $csrfToken       = $_SESSION[$csrfKey] ?? '';
 $rateLimitWindow = 60;
 $rateLimitMax    = 10;
-$processor = null;
 $linecount = 0;
 $data = [];
 
@@ -122,13 +119,53 @@ if (is_file($privatePrintApi)) {
 }
 
 $pairService = PrintPairService::getInstance();
-$pairService->registerStrip($vars['fileName']);
-$pairStatus = $pairService->getStatus();
+$banquetService = \Photobooth\Service\BanquetPrintService::getInstance();
 
-if (!$pairStatus['can_print']) {
+$pairService->registerStrip($vars['fileName']);
+
+$banquetEnqueued = null;
+$totalRequestedCopies = (int) $vars['copies'];
+$customerName = trim((string) ($_REQUEST['customer_name'] ?? ''));
+
+// Split Print Queue mechanism:
+// When guest requests N > 1 copies (e.g. 4 copies):
+//   - 1 copy is placed in the 2-strip instant queue (04_print_instant) for immediate printing
+//   - (N - 1) copies are renamed with customer name + copy count ({session}_{Name}_{N-1}x.jpg)
+//     and saved in 05_print_banquet_pending to be paired and printed during banquet/idle time.
+if ($totalRequestedCopies > 1) {
+    $extraCopies = $totalRequestedCopies - 1;
+    $banquetRes = $banquetService->enqueueBanquetCopies(
+        $vars['fileName'],
+        $customerName !== '' ? $customerName : 'KhachHang',
+        $totalRequestedCopies,
+        $extraCopies
+    );
+    if (!empty($banquetRes['success'])) {
+        $banquetEnqueued = $banquetRes['item'] ?? null;
+        $data['banquet_enqueued'] = $banquetEnqueued;
+        $data['banquet_file'] = $banquetRes['banquet_file'] ?? '';
+    }
+    // Only 1 copy is printed immediately in the instant pair queue
+    $vars['copies'] = 1;
+}
+
+$pairStatus = $pairService->getStatus();
+$splitOnly = !empty($_REQUEST['split_only']);
+
+if ($splitOnly || !$pairStatus['can_print']) {
     echo json_encode([
-        'status' => 'waiting_pair',
-        'error' => $pairStatus['message'],
+        'status' => $banquetEnqueued !== null ? 'queued_split' : 'waiting_pair',
+        'message' => $banquetEnqueued !== null
+            ? sprintf(
+                'Đã đưa 1 bản vào hàng đợi in ngay (%d/2) và lưu %d bản in thêm của [%s] vào thư mục chờ in tiệc (%s)!',
+                $pairStatus['count'],
+                (int) ($banquetEnqueued['remaining_copies'] ?? 1),
+                (string) ($banquetEnqueued['customer_name'] ?? ''),
+                (string) ($banquetEnqueued['banquet_file'] ?? '')
+            )
+            : $pairStatus['message'],
+        'error' => $banquetEnqueued === null ? $pairStatus['message'] : null,
+        'banquet_enqueued' => $banquetEnqueued,
         'pair' => $pairStatus,
     ]);
     die();
@@ -186,6 +223,7 @@ $data['job_id'] = $vars['uniqueName'];
 exec($cmd, $output, $returnValue);
 
 if ($returnValue !== 0) {
+    $error = 'Print failed.';
     switch ($returnValue) {
         case 1:
             $status = 'error';
@@ -235,6 +273,7 @@ if ($status === 'ok' || $status === 'queued') {
         'job_id' => $vars['uniqueName'],
         'left_file' => $composeRes['left_file'] ?? '',
         'right_file' => $composeRes['right_file'] ?? '',
+        'print_file' => $vars['printFile'],
         'printed_at' => time(),
     ]);
 

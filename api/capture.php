@@ -104,9 +104,9 @@ try {
         }
         $c1Res = $c1Service->processCapturedPose($captureHandler->tmpFile, $tetherSessionId, $tetherPoseIdx);
         $captureHandler->providerMeta = [
-            'provider' => $c1Res['provider'] ?? 'capture_one',
+            'provider' => $c1Res['provider'],
             'is_mock' => !empty($c1Res['fallback_used']),
-            'capture_time_ms' => (int) round((float) ($c1Res['elapsed_ms'] ?? 0)),
+            'capture_time_ms' => (int) round((float) $c1Res['elapsed_ms']),
         ];
     } elseif ($config['preview']['mode'] === 'device_cam' && $config['preview']['camTakesPic'] && $hasValidCanvasImg) {
         $captureHandler->flipImage = $config['preview']['flip'];
@@ -211,6 +211,17 @@ try {
                 $colorWorkflow->gradeFilesInPlace($savedTlPaths);
             }
         }
+    }
+
+    // Record raw capture into sequential pipeline stage 01_raw_captures
+    try {
+        if (is_file($captureHandler->tmpFile)) {
+            $rawName = $_POST['style'] === 'collage' && !empty($captureHandler->collageSubFile)
+                ? $captureHandler->collageSubFile
+                : $file;
+            \Photobooth\Service\BanquetPrintService::getInstance()->recordRawCapture($captureHandler->tmpFile, $rawName);
+        }
+    } catch (\Throwable) {
     }
 
     // send image to frontend

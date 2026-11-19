@@ -150,9 +150,9 @@ class MockCameraProvider extends AbstractCameraProvider
             [[245, 158, 11], [239, 68, 68]],
         ];
         $pal = $palettes[$poseNumber % count($palettes)];
-        $bg = imagecolorallocate($im, $pal[0][0], $pal[0][1], $pal[0][2]);
-        $accent = imagecolorallocate($im, $pal[1][0], $pal[1][1], $pal[1][2]);
-        $white = imagecolorallocate($im, 255, 255, 255);
+        $bg = (int) imagecolorallocate($im, $pal[0][0], $pal[0][1], $pal[0][2]);
+        $accent = (int) imagecolorallocate($im, $pal[1][0], $pal[1][1], $pal[1][2]);
+        $white = (int) imagecolorallocate($im, 255, 255, 255);
 
         imagefilledrectangle($im, 0, 0, $w, $h, $bg);
         imagefilledellipse($im, (int) ($w / 2), (int) ($h / 2), 460, 460, $accent);

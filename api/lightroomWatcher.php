@@ -8,7 +8,7 @@ require_once __DIR__ . '/../vendor/autoload.php';
 
 // Bypass CSRF for CLI
 if (!function_exists('checkCsrfOrFail')) {
-    function checkCsrfOrFail($source) {}
+    function checkCsrfOrFail(array $source = [], string $key = 'csrf'): void {}
 }
 
 require_once __DIR__ . '/../lib/boot.php';
@@ -28,15 +28,17 @@ $internalApi = __DIR__ . '/applyEffectsInternal.php';
 $pidFile = \Photobooth\Utility\PathUtility::getAbsolutePath('var/run/lightroom_watcher.pid');
 file_put_contents($pidFile, getmypid());
 
+$runOnce = in_array('--once', $argv ?? [], true);
+
 while (true) {
     $config = ConfigurationService::getInstance()->getConfiguration();
-    
-    if (empty($config['lightroom']['enabled'])) {
+
+    if (empty($config['lightroom']['enabled']) && !$runOnce) {
         sleep(5);
         continue;
     }
 
-    $files = scandir($exportDir);
+    $files = scandir($exportDir) ?: [];
     foreach ($files as $file) {
         if ($file === '.' || $file === '..') {
             continue;
@@ -85,6 +87,10 @@ while (true) {
         }
     }
     
+    if ($runOnce) {
+        break;
+    }
+
     // Poll every 1 second
     sleep(1);
 }

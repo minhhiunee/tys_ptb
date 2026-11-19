@@ -465,9 +465,33 @@ class Image
     public function saveJpeg(GdImage $sourceResource, string $destination): bool
     {
         try {
+            // Embed 300x300 DPI metadata for physical print calibration
+            @imageresolution($sourceResource, 300, 300);
+
             // Save the image to disk
             if (!imagejpeg($sourceResource, $destination, $this->jpegQuality)) {
                 throw new \Exception('Error saving image.');
+            }
+
+            if ($this->jpegQuality >= 98 && extension_loaded('imagick')) {
+                try {
+                    $im = new \Imagick($destination);
+                    $im->setImageFormat('jpeg');
+                    $im->setImageUnits(\Imagick::RESOLUTION_PIXELSPERINCH);
+                    $im->setImageResolution(300, 300);
+                    $im->setOption('jpeg:sampling-factor', '1x1,1x1,1x1');
+                    $im->setImageCompressionQuality(100);
+                    $tmpDest = $destination . '.im.tmp.jpg';
+                    if ($im->writeImage($tmpDest) && is_file($tmpDest)) {
+                        @rename($tmpDest, $destination);
+                    } elseif (is_file($tmpDest)) {
+                        @unlink($tmpDest);
+                    }
+                    $im->clear();
+                    $im->destroy();
+                } catch (\Throwable) {
+                    // Fallback gracefully to GD output if Imagick fails
+                }
             }
 
             // Cache image dimensions for gallery/PhotoSwipe performance
@@ -695,20 +719,47 @@ class Image
                 throw new \Exception('Cannot create new image.');
             }
 
-            // If the new width is greater than the actual width of the image, then the height is too large and the rest is cut off, or vice versa
+            // Determine center-crop rectangle in source coordinates
             if ($new_width > $old_width) {
-                // Cut point by height
-                $h_point = intval(($old_height - $new_height) / 2);
-                // Copy image
-                if (!imagecopyresampled($new, $source_file, 0, 0, 0, $h_point, $maxWidth, $maxHeight, $old_width, $new_height)) {
-                    throw new \Exception('Cannot resize and crop image by height.');
-                }
+                $srcX = 0;
+                $srcY = intval(($old_height - $new_height) / 2);
+                $srcW = $old_width;
+                $srcH = $new_height;
             } else {
-                // Cut point by width
-                $w_point = intval(($old_width - $new_width) / 2);
-                if (!imagecopyresampled($new, $source_file, 0, 0, $w_point, 0, $maxWidth, $maxHeight, $new_width, $old_height)) {
-                    throw new \Exception('Cannot resize and crop image by width.');
+                $srcX = intval(($old_width - $new_width) / 2);
+                $srcY = 0;
+                $srcW = $new_width;
+                $srcH = $old_height;
+            }
+
+            // 2-step progressive downscaling for steep ratios (>1.8x) to eliminate aliasing and preserve fine detail
+            if ($srcW > ($maxWidth * 1.8) && $srcH > ($maxHeight * 1.8)) {
+                $midW = intval($maxWidth * 2);
+                $midH = intval($maxHeight * 2);
+                $mid = imagecreatetruecolor($midW, $midH);
+                if ($mid) {
+                    if (
+                        !imagecopyresampled($mid, $source_file, 0, 0, $srcX, $srcY, $midW, $midH, $srcW, $srcH) ||
+                        !imagecopyresampled($new, $mid, 0, 0, 0, 0, $maxWidth, $maxHeight, $midW, $midH)
+                    ) {
+                        imagedestroy($mid);
+                        throw new \Exception('Cannot perform 2-step resize and crop.');
+                    }
+                    imagedestroy($mid);
+                } elseif (!imagecopyresampled($new, $source_file, 0, 0, $srcX, $srcY, $maxWidth, $maxHeight, $srcW, $srcH)) {
+                    throw new \Exception('Cannot resize and crop image.');
                 }
+            } elseif (!imagecopyresampled($new, $source_file, 0, 0, $srcX, $srcY, $maxWidth, $maxHeight, $srcW, $srcH)) {
+                throw new \Exception('Cannot resize and crop image.');
+            }
+
+            // Apply subtle Print Output Unsharp Mask after downscaling for crisp 300 DPI micro-contrast
+            if ($srcW > $maxWidth || $srcH > $maxHeight) {
+                @imageconvolution($new, [
+                    [0.0, -0.35, 0.0],
+                    [-0.35, 2.4, -0.35],
+                    [0.0, -0.35, 0.0],
+                ], 1.0, 0.0);
             }
 
             $this->imageModified = true;

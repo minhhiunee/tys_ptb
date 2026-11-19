@@ -21,7 +21,18 @@ if (empty($sessionId)) {
     exit(0);
 }
 
-// 1. Ensure companion animated GIF is generated if missing
+$syncService = SyncQueueService::getInstance();
+
+// 1. Synchronize static photo & metadata to Cloudflare R2 immediately (full uncompressed quality)
+try {
+    $resPhoto = $syncService->syncSession($sessionId);
+    $logger->info('Background phase 1 (static photo) sync for ' . $sessionId, $resPhoto);
+} catch (\Throwable $e) {
+    $logger->error('Background phase 1 sync failed for ' . $sessionId . ': ' . $e->getMessage());
+}
+
+// 2. Ensure companion high-definition animated GIF (527x1560, 18 ticks + hold frames) is generated if missing
+$gifBaked = false;
 try {
     $imagesDir = FolderEnum::IMAGES->absolute();
     $gifTargetPath = $imagesDir . DIRECTORY_SEPARATOR . $sessionId . '.gif';
@@ -31,7 +42,6 @@ try {
         $meta = json_decode((string) file_get_contents($metaPath), true);
         if (is_array($meta)) {
             $gifProcessor = new GifProcessor();
-            $gifBaked = false;
 
             if (!empty($meta['isCollage']) && !empty($meta['layout'])) {
                 $layoutConfigPath = Collage::getCollageConfigPath(
@@ -68,12 +78,16 @@ try {
                         }
 
                         if (!empty($poseFrameSequences)) {
+                            $finalFramedPath = $imagesDir . DIRECTORY_SEPARATOR . basename((string) ($meta['final_photo'] ?? ($sessionId . '.jpg')));
                             $gifBaked = $gifProcessor->createFramedTimelapseGif(
                                 $poseFrameSequences,
                                 $layoutData,
                                 $gifTargetPath,
-                                180,
-                                1350
+                                140,
+                                1560,
+                                isset($meta['preset']) ? (string) $meta['preset'] : null,
+                                (int) ($meta['preset_amount'] ?? 100),
+                                is_file($finalFramedPath) ? $finalFramedPath : null
                             );
                         }
                     }
@@ -96,8 +110,8 @@ try {
                         $gifBaked = $gifProcessor->createAnimatedGif(
                             $poseAbsPaths,
                             $gifTargetPath,
-                            180,
-                            1080
+                            140,
+                            1200
                         );
                     }
                 }
@@ -112,11 +126,18 @@ try {
     $logger->warning("Background GIF generation error for {$sessionId}: " . $gifErr->getMessage());
 }
 
-// 2. Synchronize Session (Photo, GIF, metadata) to Cloudflare R2
+// 3. Push the newly generated animated GIF to Cloudflare R2
 try {
-    $syncService = SyncQueueService::getInstance();
     $result = $syncService->syncSession($sessionId);
-    $logger->info('Background sync session completed for ' . $sessionId, $result);
+    $logger->info('Background phase 3 (GIF & session) sync completed for ' . $sessionId, $result);
 } catch (\Throwable $e) {
-    $logger->error('Background sync failed for ' . $sessionId . ': ' . $e->getMessage());
+    $logger->error('Background phase 3 sync failed for ' . $sessionId . ': ' . $e->getMessage());
+}
+
+// 4. Gradually drain any previous pending/retry sessions in the queue (3-5 min background catch-up)
+try {
+    $queueRes = $syncService->processPendingQueue(5);
+    $logger->info('Background pending queue sweep completed', $queueRes);
+} catch (\Throwable $e) {
+    $logger->warning('Background pending queue sweep failed: ' . $e->getMessage());
 }

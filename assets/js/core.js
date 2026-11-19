@@ -209,8 +209,8 @@ const photoBooth = (function () {
         frames: [],
         timer: null,
         canvas: null,
-        maxFramesPerPose: 18,
-        intervalMs: 380,
+        maxFramesPerPose: 20,
+        intervalMs: 350,
         captureFrame: () => {
             try {
                 const videoEl = previewVideo.get(0);
@@ -223,7 +223,7 @@ const photoBooth = (function () {
                 if (!api.timelapse.canvas) {
                     api.timelapse.canvas = document.createElement('canvas');
                 }
-                const maxDim = 840;
+                const maxDim = 1080;
                 const scale = Math.min(1, maxDim / Math.max(videoEl.videoWidth, videoEl.videoHeight));
                 const w = Math.max(1, Math.round(videoEl.videoWidth * scale));
                 const h = Math.max(1, Math.round(videoEl.videoHeight * scale));
@@ -233,7 +233,7 @@ const photoBooth = (function () {
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 ctx.drawImage(videoEl, 0, 0, w, h);
-                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.92);
+                const dataUrl = api.timelapse.canvas.toDataURL('image/jpeg', 0.95);
                 if (dataUrl && dataUrl.indexOf('data:image/jpeg') === 0) {
                     api.timelapse.frames.push(dataUrl);
                 }
@@ -1395,6 +1395,9 @@ const photoBooth = (function () {
 
     api.renderPic = function (filename, files) {
         api.filename = filename;
+        if (typeof window.refreshPairQueueStatus === 'function') {
+            window.refreshPairQueueStatus(filename);
+        }
 
         if (config.print.auto && config.filters.enabled === false) {
             setTimeout(function () {

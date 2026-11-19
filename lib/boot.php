@@ -102,7 +102,15 @@ header('Referrer-Policy: same-origin');
 require_once dirname(__DIR__) . '/vendor/autoload.php';
 
 $dirsReadyFlag = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'photobooth_dirs_ready.flag';
-if (!is_file($dirsReadyFlag) || !is_dir(FolderEnum::IMAGES->absolute()) || !is_dir(FolderEnum::TEMP->absolute()) || !is_dir(FolderEnum::C1_INPUT->absolute())) {
+if (
+    !is_file($dirsReadyFlag)
+    || !is_dir(FolderEnum::IMAGES->absolute())
+    || !is_dir(FolderEnum::TEMP->absolute())
+    || !is_dir(FolderEnum::C1_INPUT->absolute())
+    || !is_dir(FolderEnum::PIPELINE_RAW->absolute())
+    || !is_dir(FolderEnum::PIPELINE_PRINT_BANQUET->absolute())
+    || !is_dir(FolderEnum::PIPELINE_PRINTED->absolute())
+) {
     FileUtility::createDirectory(PathUtility::getAbsolutePath('config'));
     FileUtility::createDirectory(FolderEnum::DATA->absolute());
     FileUtility::createDirectory(FolderEnum::IMAGES->absolute());
@@ -117,6 +125,12 @@ if (!is_file($dirsReadyFlag) || !is_dir(FolderEnum::IMAGES->absolute()) || !is_d
     FileUtility::createDirectory(FolderEnum::C1_INPUT->absolute());
     FileUtility::createDirectory(FolderEnum::C1_OUTPUT->absolute());
     FileUtility::createDirectory(FolderEnum::C1_ARCHIVE->absolute());
+    FileUtility::createDirectory(FolderEnum::PIPELINE_RAW->absolute());
+    FileUtility::createDirectory(FolderEnum::PIPELINE_PENDING_FRAME->absolute());
+    FileUtility::createDirectory(FolderEnum::PIPELINE_FRAMED->absolute());
+    FileUtility::createDirectory(FolderEnum::PIPELINE_PRINT_INSTANT->absolute());
+    FileUtility::createDirectory(FolderEnum::PIPELINE_PRINT_BANQUET->absolute());
+    FileUtility::createDirectory(FolderEnum::PIPELINE_PRINTED->absolute());
     FileUtility::createDirectory(FolderEnum::PRIVATE->absolute());
     FileUtility::createDirectory(PathUtility::getAbsolutePath('private/fonts'));
     FileUtility::createDirectory(PathUtility::getAbsolutePath('private/screensavers'));

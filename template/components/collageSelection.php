@@ -218,20 +218,21 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
     $html .= '<style>
         #collageSelectorModal .modal-inner,
         #collageSelector .modal-inner {
-            --modal-background: #FFFFFF;
-            --modal-color: #0F172A;
-            background: linear-gradient(160deg, #FFFFFF 0%, #F8FAFC 100%) !important;
-            border: 1.5px solid #E2E8F0 !important;
-            border-radius: 24px !important;
-            box-shadow: 0 28px 64px rgba(15, 23, 42, 0.16), 0 2px 8px rgba(15, 23, 42, 0.06) !important;
-            backdrop-filter: blur(20px) !important;
-            color: #0F172A !important;
+            --modal-background: #0D0728;
+            --modal-color: #F8FAFC;
+            background: linear-gradient(165deg, #130B38 0%, #08031C 100%) !important;
+            border: 1.5px solid rgba(167, 139, 250, 0.38) !important;
+            border-radius: 26px !important;
+            box-shadow: 0 36px 88px rgba(0, 0, 0, 0.75), 0 0 40px rgba(139, 92, 246, 0.22) !important;
+            backdrop-filter: blur(28px) !important;
+            color: #F8FAFC !important;
             overflow: hidden !important;
+            font-family: var(--font-family, "Be Vietnam Pro", sans-serif);
         }
         #collageSelectorModal .modal-body,
         #collageSelector .modal-body {
             background: transparent !important;
-            color: #0F172A !important;
+            color: #F8FAFC !important;
         }
         #collageSelectorModal .collage-modal-brand img,
         #collageSelector .collage-modal-brand img {
@@ -239,37 +240,42 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
         }
         #collageSelectorModal .modal-buttonbar,
         #collageSelector .modal-buttonbar {
-            background: #F8FAFC !important;
-            border-top: 1px solid #E2E8F0 !important;
+            background: rgba(8, 3, 28, 0.95) !important;
+            border-top: 1px solid rgba(167, 139, 250, 0.24) !important;
         }
         .collageSelector__option {
-            background: #FFFFFF !important;
-            border: 1.5px solid #E2E8F0 !important;
-            color: #0F172A !important;
-            box-shadow: 0 4px 16px rgba(15, 23, 42, 0.06) !important;
+            background: rgba(22, 14, 58, 0.88) !important;
+            border: 1.5px solid rgba(167, 139, 250, 0.32) !important;
+            color: #F8FAFC !important;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
         }
         .collageSelector__option:hover {
-            background: #F8FAFC !important;
-            border-color: #2563EB !important;
-            transform: translateY(-3px);
-            box-shadow: 0 12px 28px rgba(37, 99, 235, 0.16) !important;
+            background: rgba(36, 22, 92, 0.96) !important;
+            border-color: #38BDF8 !important;
+            transform: translateY(-4px) scale(1.02);
+            box-shadow: 0 18px 40px rgba(56, 189, 248, 0.28), 0 0 20px rgba(56, 189, 248, 0.2) !important;
         }
         .frame-card-preview {
-            background: #F8FAFC !important;
-            border-color: #E2E8F0 !important;
+            background: radial-gradient(circle at 50% 30%, #160D42 0%, #070318 100%) !important;
+            border: 1.5px solid rgba(167, 139, 250, 0.28) !important;
+            box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.6) !important;
+        }
+        .frame-card-preview img {
+            filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.85)) drop-shadow(0 0 2px rgba(255, 255, 255, 0.2)) !important;
         }
     </style>';
     $html .= '<div class="modal hidden" id="collageSelectorModal" aria-hidden="true" role="dialog" aria-labelledby="collageSelectorTitle">';
-    $html .= '<div class="modal-inner" style="max-width: 960px; width: 92%; background: linear-gradient(160deg, #FFFFFF 0%, #F8FAFC 100%); border: 1.5px solid #E2E8F0; border-radius: 24px; box-shadow: 0 28px 64px rgba(15, 23, 42, 0.16); color: #0F172A; overflow: hidden;">';
-    $html .= '<div class="modal-body" style="padding: 22px 20px 14px; background: transparent; color: #0F172A;">';
-    $html .= '<div class="collage-modal-brand" style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:10px;">';
-    $html .= '<img src="' . $logoUrl . '" alt="Logo" style="width:38px; height:38px; max-height:38px; max-width:38px; margin:0; border-radius:50%; background:#fff; padding:2px; object-fit:contain; flex-shrink:0; box-shadow:0 2px 6px rgba(0,0,0,0.08);" />';
-    $html .= '<div style="display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:2px;">';
-    $html .= '<img src="' . $chaoUrl . '" alt="CHÀO TÂN SINH VIÊN 2026" style="height:11px; max-height:11px; width:auto; max-width:190px; margin:0; object-fit:contain;" />';
-    $html .= '<img src="' . $titleUrl . '" alt="TRẠM TINH HÀ" style="height:19px; max-height:19px; width:auto; max-width:210px; margin:0; object-fit:contain; filter:drop-shadow(0 0 6px rgba(37,99,235,0.3));" />';
+    $html .= '<div class="modal-inner" style="max-width: 960px; width: 92%; background: linear-gradient(165deg, #130B38 0%, #08031C 100%); border: 1.5px solid rgba(167, 139, 250, 0.38); border-radius: 26px; box-shadow: 0 36px 88px rgba(0, 0, 0, 0.75), 0 0 40px rgba(139, 92, 246, 0.22); color: #F8FAFC; overflow: hidden;">';
+    $html .= '<div class="modal-body" style="padding: 24px 22px 16px; background: transparent; color: #F8FAFC;">';
+    $html .= '<div class="collage-modal-brand" style="display:flex; align-items:center; justify-content:center; gap:12px; margin-bottom:12px;">';
+    $html .= '<img src="' . $logoUrl . '" alt="Logo" style="width:42px; height:42px; max-height:42px; max-width:42px; margin:0; border-radius:50%; background:rgba(255,255,255,0.08); border:1px solid rgba(167,139,250,0.4); padding:3px; object-fit:contain; flex-shrink:0; box-shadow:0 0 16px rgba(56,189,248,0.35);" />';
+    $html .= '<div style="display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:3px;">';
+    $html .= '<img src="' . $chaoUrl . '" alt="CHÀO TÂN SINH VIÊN 2026" style="height:12px; max-height:12px; width:auto; max-width:210px; margin:0; object-fit:contain; filter:drop-shadow(0 0 6px rgba(56,189,248,0.6));" />';
+    $html .= '<img src="' . $titleUrl . '" alt="TRẠM TINH HÀ" style="height:22px; max-height:22px; width:auto; max-width:230px; margin:0; object-fit:contain; filter:drop-shadow(0 0 10px rgba(56,189,248,0.7));" />';
     $html .= '</div></div>';
-    $html .= '<h2 id="collageSelectorTitle" style="text-align:center; font-size:22px; font-weight:800; color:#0F172A; margin:0 0 6px; letter-spacing:-0.02em;">Chọn Mẫu Khung Ảnh • Trạm Tinh Hà</h2>';
-    $html .= '<p style="text-align:center; font-size:13px; color:#475569; margin:0 0 18px;">Chọn 1 trong 2 mẫu khung dải 4 ảnh (Chụp đủ 2 lượt khung bất kỳ để ghép in giấy chuẩn)</p>';
+    $html .= '<h2 id="collageSelectorTitle" style="text-align:center; font-family:\'Be Vietnam Pro\', \'Segoe UI\', system-ui, sans-serif; font-size:24px; font-weight:800; color:#FFFFFF; margin:0 0 6px; letter-spacing:-0.02em; text-shadow:0 2px 10px rgba(0,0,0,0.5);">Chọn Mẫu Khung Ảnh • Trạm Tinh Hà</h2>';
+    $html .= '<p style="text-align:center; font-family:\'Be Vietnam Pro\', sans-serif; font-size:13.5px; color:#C4B5FD; margin:0 0 20px; font-weight:400;">Chọn 1 trong 2 mẫu khung dải 4 ảnh (Chụp đủ 2 lượt khung bất kỳ để ghép in giấy chuẩn)</p>';
     $html .= '<div class="collageSelector__options" style="display:flex; flex-wrap:wrap; gap:22px; justify-content:center; align-items:stretch;">';
 
     // Get orientation from config (landscape or portrait)
@@ -311,9 +317,9 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
         if (!empty($layoutData['frame'])) {
             $frameUrl = htmlspecialchars(PathUtility::getPublicPath($layoutData['frame']), ENT_QUOTES);
             $previewHtml = sprintf(
-                '<div class="frame-card-preview" style="position:relative; width:100%%; height:240px; display:flex; align-items:center; justify-content:center; background:#F8FAFC; border:1px solid #E2E8F0; border-radius:12px; padding:12px; overflow:hidden;">' .
-                '<img src="%s" alt="%s" style="max-height:100%%; max-width:100%%; object-fit:contain; filter:drop-shadow(0 4px 10px rgba(0,0,0,0.12));" />' .
-                '<span class="frame-badge" style="position:absolute; top:8px; right:8px; background:linear-gradient(135deg, #0284c7, #2563eb); color:#ffffff; font-size:11px; font-weight:700; padding:4px 10px; border-radius:12px; box-shadow:0 2px 6px rgba(37,99,235,0.25);"><i class="fa fa-camera"></i> %d Lần chụp</span>' .
+                '<div class="frame-card-preview" style="position:relative; width:100%%; height:240px; display:flex; align-items:center; justify-content:center; background:radial-gradient(circle at 50%% 30%%, #160D42 0%%, #070318 100%%); border:1.5px solid rgba(167, 139, 250, 0.28); border-radius:14px; padding:12px; overflow:hidden;">' .
+                '<img src="%s" alt="%s" style="max-height:100%%; max-width:100%%; object-fit:contain; filter:drop-shadow(0 10px 24px rgba(0,0,0,0.85)) drop-shadow(0 0 2px rgba(255,255,255,0.25));" />' .
+                '<span class="frame-badge" style="position:absolute; top:8px; right:8px; font-family:\'Be Vietnam Pro\', \'Segoe UI\', system-ui, sans-serif; background:linear-gradient(135deg, #0284c7, #2563eb); color:#ffffff; font-size:11px; font-weight:700; padding:4px 10px; border-radius:12px; box-shadow:0 2px 8px rgba(37,99,235,0.4);"><i class="fa fa-camera"></i> %d Lần chụp</span>' .
                 '</div>',
                 $frameUrl,
                 htmlspecialchars($label, ENT_QUOTES),
@@ -324,11 +330,11 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
         }
 
         $html .= sprintf(
-            '<button type="button" class="collageSelector__option cursor-pointer" data-layout="%s" data-limit="%d" style="min-width:230px; max-width:270px; flex:1; display:flex; flex-direction:column; align-items:center; gap:10px; background:#FFFFFF; border:1.5px solid #E2E8F0; border-radius:16px; padding:14px; box-shadow:0 6px 18px rgba(15,23,42,0.06); transition:all 0.2s cubic-bezier(0.16,1,0.3,1); cursor:pointer;">' .
+            '<button type="button" class="collageSelector__option cursor-pointer" data-layout="%s" data-limit="%d" style="min-width:230px; max-width:270px; flex:1; display:flex; flex-direction:column; align-items:center; gap:10px; background:rgba(22, 14, 58, 0.88); border:1.5px solid rgba(167, 139, 250, 0.32); border-radius:18px; padding:14px; box-shadow:0 8px 24px rgba(0,0,0,0.45); transition:all 0.25s cubic-bezier(0.16,1,0.3,1); cursor:pointer;">' .
             '%s' .
             '<div style="width:100%%; text-align:center;">' .
-            '<div class="collageSelector__label" style="font-weight:700; font-size:14.5px; color:#0F172A; line-height:1.3; margin-bottom:3px;">%s</div>' .
-            '<div style="font-size:11.5px; color:#475569; font-weight:500;">%s</div>' .
+            '<div class="collageSelector__label" style="font-family:\'Be Vietnam Pro\', \'Segoe UI\', system-ui, sans-serif; font-weight:700; font-size:15px; color:#FFFFFF; line-height:1.3; margin-bottom:4px; letter-spacing:-0.01em;">%s</div>' .
+            '<div style="font-family:\'Be Vietnam Pro\', sans-serif; font-size:12px; color:#A5B4FC; font-weight:500;">%s</div>' .
             '</div>' .
             '</button>',
             htmlspecialchars($layoutId, ENT_QUOTES),
@@ -341,9 +347,9 @@ function renderCollageOptionsFromConfig(array $collageConfig): string
 
     $html .= '</div>'; // .collageSelector__options
     $html .= '</div>'; // .modal-body
-    $html .= '<div class="modal-buttonbar" style="padding:12px 20px 20px; display:flex; justify-content:center; background: #F8FAFC; border-top: 1px solid #E2E8F0;">';
-    $html .= '<button type="button" class="modal-button" id="collageSelectorClose" data-modal-close style="background:#FFFFFF; color:#334155; border:1px solid #CBD5E1; font-weight:600; padding:10px 28px; border-radius:999px; cursor:pointer; box-shadow:0 2px 4px rgba(0,0,0,0.04);">';
-    $html .= '<span class="modal-button--icon" style="margin-right:6px;"><i class="fa fa-times"></i></span>';
+    $html .= '<div class="modal-buttonbar" style="padding:14px 22px 22px; display:flex; justify-content:center; background: rgba(8, 3, 28, 0.95); border-top: 1px solid rgba(167, 139, 250, 0.24);">';
+    $html .= '<button type="button" class="modal-button" id="collageSelectorClose" data-modal-close style="font-family:\'Be Vietnam Pro\', sans-serif; background:rgba(255, 255, 255, 0.12); color:#F8FAFC; border:1px solid rgba(255, 255, 255, 0.25); font-weight:600; padding:10px 32px; border-radius:999px; cursor:pointer; box-shadow:0 2px 6px rgba(0,0,0,0.3); transition:all 0.2s ease;">';
+    $html .= '<span class="modal-button--icon" style="margin-right:8px;"><i class="fa fa-times"></i></span>';
     $html .= '<span class="modal-button--label">' . $languageService->translate('close') . '</span>';
     $html .= '</button>';
     $html .= '</div>'; // .modal-buttonbar

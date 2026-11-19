@@ -37,6 +37,9 @@ include PathUtility::getAbsolutePath('template/components/main.defaults.php');
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" />
     <link rel="stylesheet" href="<?=$assetService->getUrl('node_modules/normalize.css/normalize.css')?>" />
     <link rel="stylesheet" href="<?=$assetService->getUrl('node_modules/@fortawesome/fontawesome-free/css/all.min.css')?>" />
     <link rel="stylesheet" href="<?=$assetService->getUrl('node_modules/material-icons/iconfont/material-icons.css')?>">
@@ -47,5 +50,27 @@ include PathUtility::getAbsolutePath('template/components/main.defaults.php');
     <?= $photoswipe && $config['gallery']['bottom_bar'] ? '<link rel="stylesheet" href="' . $assetService->getUrl('resources/css/photoswipe-bottom.css') . '"/>' : '' ?>
     <?= ThemeUtility::renderCustomUserStyle($config); ?>
     <?= is_file(PathUtility::getAbsolutePath('private/overrides.css')) ? '<link rel="stylesheet" href="' . $assetService->getUrl('private/overrides.css') . '"/>' : '' ?>
+    <style>
+        /* Unified Vietnamese Typography System — Eliminates Dosis Latin-only glyph fallback mismatch */
+        :root {
+            --font-family-vietnamese: 'Be Vietnam Pro', 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', Arial, sans-serif;
+        }
+        html, body, button, input, select, textarea,
+        .stage, .button, .button--label, .modal, .confirm-modal,
+        .collageSelector__modal, .pswp, .gallery {
+            font-family: var(--font-family-vietnamese) !important;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .fa, .fas, .far, .fab, .fa-solid, .fa-regular, .fa-brands {
+            font-family: "Font Awesome 6 Free", "Font Awesome 5 Free", FontAwesome !important;
+        }
+        .material-icons {
+            font-family: 'Material Icons' !important;
+        }
+        code, pre, .banquet-filename-code {
+            font-family: 'Consolas', 'JetBrains Mono', ui-monospace, monospace !important;
+        }
+    </style>
     <script src="<?=$assetService->getUrl('node_modules/jquery/dist/jquery.min.js')?>"></script>
 </head>

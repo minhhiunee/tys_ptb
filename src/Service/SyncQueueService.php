@@ -114,7 +114,7 @@ class SyncQueueService
                 (string) ($this->config['qr']['custom_url'] ?? $this->config['qr']['cloud_url'] ?? self::DEFAULT_CLOUD_URL)
             ),
             'cloud_api_key' => trim((string) ($this->config['sync']['api_key'] ?? self::DEFAULT_API_KEY)),
-            'auto_compress_cloud' => true,
+            'auto_compress_cloud' => false,
             'updated_at' => time(),
         ];
 
@@ -191,6 +191,40 @@ class SyncQueueService
         }
 
         return $url;
+    }
+
+    /**
+     * Resolve the filename of the latest valid session photo in data/images.
+     */
+    public function resolveLatestSessionFilename(string $fallback = 'demo_session.jpg'): string
+    {
+        $imagesDir = FolderEnum::IMAGES->absolute();
+        $latestFile = '';
+        $latestMtime = 0;
+
+        if (is_dir($imagesDir)) {
+            $entries = @scandir($imagesDir) ?: [];
+            foreach ($entries as $entry) {
+                if (
+                    !str_ends_with(strtolower($entry), '.jpg') ||
+                    str_starts_with($entry, 'orig_') ||
+                    str_starts_with($entry, 'raw_pose_') ||
+                    str_starts_with($entry, 'tl_') ||
+                    str_starts_with($entry, 'preview_') ||
+                    preg_match('/-\d+\.jpg$/i', $entry)
+                ) {
+                    continue;
+                }
+                $fullPath = $imagesDir . DIRECTORY_SEPARATOR . $entry;
+                $mtime = (int) @filemtime($fullPath);
+                if ($mtime >= $latestMtime) {
+                    $latestMtime = $mtime;
+                    $latestFile = $entry;
+                }
+            }
+        }
+
+        return $latestFile !== '' ? $latestFile : $fallback;
     }
 
     /**
@@ -353,7 +387,7 @@ class SyncQueueService
 
         $apiKey = $this->getApiKey();
         $netCfg = $this->getNetworkModeConfig();
-        $autoCompress = (bool) ($netCfg['auto_compress_cloud'] ?? true);
+        $autoCompress = (bool) ($netCfg['auto_compress_cloud'] ?? false);
         $tempCompressedFile = null;
 
         $imagesDir = FolderEnum::IMAGES->absolute();
@@ -392,8 +426,8 @@ class SyncQueueService
         // 1. Upload Final Photo first (if needed)
         if ($needsPhotoUpload) {
             $uploadPath = $finalPath;
-            if ($autoCompress && filesize($finalPath) > 350 * 1024) {
-                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 1800, 88);
+            if ($autoCompress && filesize($finalPath) > 8 * 1024 * 1024) {
+                $tempCompressedFile = $this->createCompressedCloudCopy($finalPath, 3200, 98);
                 if ($tempCompressedFile !== null) {
                     $uploadPath = $tempCompressedFile;
                 }

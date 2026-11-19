@@ -27,6 +27,12 @@ enum FolderEnum: string
     case C1_INPUT = 'data/c1_input';
     case C1_OUTPUT = 'data/c1_output';
     case C1_ARCHIVE = 'data/c1_archive';
+    case PIPELINE_RAW = 'data/pipeline/01_raw_captures';
+    case PIPELINE_PENDING_FRAME = 'data/pipeline/02_pending_frame';
+    case PIPELINE_FRAMED = 'data/pipeline/03_framed';
+    case PIPELINE_PRINT_INSTANT = 'data/pipeline/04_print_instant';
+    case PIPELINE_PRINT_BANQUET = 'data/pipeline/05_print_banquet_pending';
+    case PIPELINE_PRINTED = 'data/pipeline/06_printed';
 
     public function public(): string
     {
@@ -60,6 +66,12 @@ enum FolderEnum: string
             FolderEnum::C1_INPUT => 'c1_input',
             FolderEnum::C1_OUTPUT => 'c1_output',
             FolderEnum::C1_ARCHIVE => 'c1_archive',
+            FolderEnum::PIPELINE_RAW => 'pipeline_raw',
+            FolderEnum::PIPELINE_PENDING_FRAME => 'pipeline_pending_frame',
+            FolderEnum::PIPELINE_FRAMED => 'pipeline_framed',
+            FolderEnum::PIPELINE_PRINT_INSTANT => 'pipeline_print_instant',
+            FolderEnum::PIPELINE_PRINT_BANQUET => 'pipeline_print_banquet',
+            FolderEnum::PIPELINE_PRINTED => 'pipeline_printed',
         };
     }
 }

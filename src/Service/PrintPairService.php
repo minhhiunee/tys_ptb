@@ -52,10 +52,12 @@ class PrintPairService
 
         $imagesDir = FolderEnum::IMAGES->absolute();
         $absPath = $imagesDir . DIRECTORY_SEPARATOR . $cleanFile;
+        clearstatcache(true, $absPath);
         if (!is_file($absPath)) {
             // Give file system up to 300ms to flush file if called immediately after copy
             for ($attempt = 0; $attempt < 3; $attempt++) {
                 usleep(100000);
+                clearstatcache(true, $absPath);
                 if (is_file($absPath)) {
                     break;
                 }
@@ -63,6 +65,7 @@ class PrintPairService
         }
         if (!is_file($absPath)) {
             $tempPath = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . $cleanFile;
+            clearstatcache(true, $tempPath);
             if (!is_file($tempPath)) {
                 return $this->getStatus();
             }
@@ -150,10 +153,20 @@ class PrintPairService
     public function clearQueue(?array $lastMergedInfo = null): array
     {
         $state = $this->loadState();
-        $state['pending'] = [];
         if ($lastMergedInfo !== null) {
             $state['last_merged_print'] = $lastMergedInfo;
+            try {
+                BanquetPrintService::getInstance()->archiveInstantPrint(
+                    (string) ($lastMergedInfo['job_id'] ?? ('instant_' . time())),
+                    (string) ($lastMergedInfo['left_file'] ?? ''),
+                    (string) ($lastMergedInfo['right_file'] ?? ''),
+                    (string) ($lastMergedInfo['print_file'] ?? '')
+                );
+            } catch (\Throwable) {
+                // Non-fatal archive step
+            }
         }
+        $state['pending'] = [];
         $state['updated_at'] = time();
         $this->saveState($state);
 
@@ -170,6 +183,12 @@ class PrintPairService
         if (count($pending) !== count($state['pending'] ?? [])) {
             $state['pending'] = $pending;
             $this->saveState($state);
+        }
+
+        // Keep 04_print_instant directory synchronized with the active 2-strip instant queue
+        try {
+            BanquetPrintService::getInstance()->syncInstantQueueDirectory($pending);
+        } catch (\Throwable) {
         }
 
         $count = count($pending);
@@ -196,12 +215,24 @@ class PrintPairService
             default => 'Đã đủ 2/2 dải ảnh • Sẵn sàng ghép in Canon SELPHY CP1500',
         };
 
+        $banquetSummary = ['pending_customers' => 0, 'total_pending_strips' => 0, 'total_sheets_needed' => 0];
+        try {
+            $bStatus = BanquetPrintService::getInstance()->getBanquetStatus();
+            $banquetSummary = [
+                'pending_customers' => $bStatus['pending_customers'] ?? 0,
+                'total_pending_strips' => $bStatus['total_pending_strips'] ?? 0,
+                'total_sheets_needed' => $bStatus['total_sheets_needed'] ?? 0,
+            ];
+        } catch (\Throwable) {
+        }
+
         return [
             'count' => $count,
             'required' => 2,
             'can_print' => $canPrint,
             'pending' => $items,
             'last_merged_print' => $state['last_merged_print'] ?? null,
+            'banquet' => $banquetSummary,
             'message' => $message,
         ];
     }
@@ -234,6 +265,27 @@ class PrintPairService
         $leftPath = $imagesDir . DIRECTORY_SEPARATOR . $leftItem['filename'];
         $rightPath = $imagesDir . DIRECTORY_SEPARATOR . $rightItem['filename'];
 
+        $res = $this->composeFilesForPrint($leftPath, $rightPath, $destPrintPath, $jpegQuality);
+        if (empty($res['success'])) {
+            return $res;
+        }
+
+        return [
+            'success' => true,
+            'left_file' => $leftItem['filename'],
+            'right_file' => $rightItem['filename'],
+            'left_layout' => $leftItem['layout'],
+            'right_layout' => $rightItem['layout'],
+            'width' => self::TARGET_WIDTH,
+            'height' => self::TARGET_HEIGHT,
+        ];
+    }
+
+    /**
+     * Compose any 2 arbitrary strip files (Left + Right) onto the Canon SELPHY CP1500 4x6" canvas (1969x2913, 300 DPI, 4:4:4).
+     */
+    public function composeFilesForPrint(string $leftPath, string $rightPath, string $destPrintPath, int $jpegQuality = 100): array
+    {
         if (!is_file($leftPath) || !is_file($rightPath)) {
             return [
                 'success' => false,
@@ -250,7 +302,7 @@ class PrintPairService
         }
 
         // Fill clean white background first
-        $white = imagecolorallocate($canvas, 255, 255, 255);
+        $white = (int) imagecolorallocate($canvas, 255, 255, 255);
         imagefilledrectangle($canvas, 0, 0, self::TARGET_WIDTH, self::TARGET_HEIGHT, $white);
 
         // Optional base FramePTB.png underlayer (fills the 1px center seam at x=984 naturally)
@@ -324,7 +376,7 @@ class PrintPairService
         imagedestroy($rightImg);
 
         // Draw subtle hair-line cut guide marks at the top & bottom of the center seam (x = 984) for precision cutting
-        $cutGuideColor = imagecolorallocate($canvas, 180, 188, 200);
+        $cutGuideColor = (int) imagecolorallocate($canvas, 180, 188, 200);
         imageline($canvas, self::STRIP_WIDTH, 0, self::STRIP_WIDTH, 28, $cutGuideColor);
         imageline($canvas, self::STRIP_WIDTH, self::TARGET_HEIGHT - 29, self::STRIP_WIDTH, self::TARGET_HEIGHT - 1, $cutGuideColor);
 
@@ -333,10 +385,31 @@ class PrintPairService
             @mkdir($destDir, 0755, true);
         }
 
-        // Set 300 DPI resolution header in JPEG via imagejpeg
-        $saved = imagejpeg($canvas, $destPrintPath, max(85, min(100, $jpegQuality)));
+        // Set 300 DPI resolution header in JPEG via GD and refine with Imagick 4:4:4 chroma subsampling
+        @imageresolution($canvas, 300, 300);
+        $saved = imagejpeg($canvas, $destPrintPath, max(98, min(100, $jpegQuality)));
         imagedestroy($canvas);
         if ($saved && is_file($destPrintPath)) {
+            if (extension_loaded('imagick')) {
+                try {
+                    $im = new \Imagick($destPrintPath);
+                    $im->setImageFormat('jpeg');
+                    $im->setImageUnits(\Imagick::RESOLUTION_PIXELSPERINCH);
+                    $im->setImageResolution(300, 300);
+                    $im->setOption('jpeg:sampling-factor', '1x1,1x1,1x1');
+                    $im->setImageCompressionQuality(100);
+                    $tmpDest = $destPrintPath . '.im.tmp.jpg';
+                    if ($im->writeImage($tmpDest) && is_file($tmpDest)) {
+                        @rename($tmpDest, $destPrintPath);
+                    } elseif (is_file($tmpDest)) {
+                        @unlink($tmpDest);
+                    }
+                    $im->clear();
+                    $im->destroy();
+                } catch (\Throwable) {
+                    // Fallback gracefully to GD output if Imagick fails
+                }
+            }
             @chmod($destPrintPath, 0666);
         }
 
@@ -349,10 +422,8 @@ class PrintPairService
 
         return [
             'success' => true,
-            'left_file' => $leftItem['filename'],
-            'right_file' => $rightItem['filename'],
-            'left_layout' => $leftItem['layout'],
-            'right_layout' => $rightItem['layout'],
+            'left_file' => basename($leftPath),
+            'right_file' => basename($rightPath),
             'width' => self::TARGET_WIDTH,
             'height' => self::TARGET_HEIGHT,
         ];
@@ -384,6 +455,7 @@ class PrintPairService
             }
             $fn = basename((string) $item['filename']);
             $abs = $imagesDir . DIRECTORY_SEPARATOR . $fn;
+            clearstatcache(true, $abs);
             if (!is_file($abs)) {
                 continue;
             }

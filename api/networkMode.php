@@ -92,7 +92,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $venueSsid = trim((string) ($_POST['venue_ssid'] ?? $currentConfig['venue_ssid']));
         $cloudUrl = rtrim(trim((string) ($_POST['cloud_url'] ?? $currentConfig['cloud_url'])), '/');
         $cloudApiKey = trim((string) ($_POST['cloud_api_key'] ?? $currentConfig['cloud_api_key']));
-        $autoCompress = isset($_POST['auto_compress_cloud']) ? (bool) $_POST['auto_compress_cloud'] : true;
+        $autoCompress = isset($_POST['auto_compress_cloud'])
+            ? filter_var($_POST['auto_compress_cloud'], FILTER_VALIDATE_BOOLEAN)
+            : (bool) ($currentConfig['auto_compress_cloud'] ?? false);
 
         $updated = [
             'mode' => $newMode,
@@ -118,10 +120,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-echo json_encode([
+$syncService = SyncQueueService::getInstance();
+$targetFile = (isset($_GET['file']) && $_GET['file'] !== '') ? (string) $_GET['file'] : 'latest';
+if ($targetFile === 'latest') {
+    $targetFile = $syncService->resolveLatestSessionFilename();
+}
+
+$qrData = $syncService->buildSessionQrData($targetFile);
+
+echo json_encode(array_merge([
     'success' => true,
     'config' => $currentConfig,
-    'sync_summary' => SyncQueueService::getInstance()->getQueueSummary(),
-]);
+    'sync_summary' => $syncService->getQueueSummary(),
+], $qrData));
 exit();
 

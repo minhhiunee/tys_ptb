@@ -3,39 +3,29 @@
 /** @var array $config */
 
 use Photobooth\Enum\FolderEnum;
-use Photobooth\Service\RemoteStorageService;
 use Photobooth\Service\SyncQueueService;
-use Photobooth\Utility\PathUtility;
 use Photobooth\Utility\QrCodeUtility;
 
 require_once '../lib/boot.php';
 
+if (!empty($_GET['url'])) {
+    $targetUrl = trim((string) $_GET['url']);
+    try {
+        $result = QrCodeUtility::create($targetUrl);
+        header('Content-Type: ' . $result->getMimeType());
+        header('Cache-Control: public, max-age=86400');
+        echo $result->getString();
+    } catch (\Throwable $e) {
+        http_response_code(500);
+        echo 'Error generating QR Code: ' . $e->getMessage();
+    }
+    exit();
+}
+
+$syncService = SyncQueueService::getInstance();
 $filename = (isset($_GET['filename']) && $_GET['filename'] !== '') ? (string) $_GET['filename'] : 'latest';
 if ($filename === 'latest') {
-    $imagesDir = FolderEnum::IMAGES->absolute();
-    $latestFile = '';
-    $latestMtime = 0;
-    if (is_dir($imagesDir)) {
-        $entries = @scandir($imagesDir) ?: [];
-        foreach ($entries as $entry) {
-            if (
-                !str_ends_with(strtolower($entry), '.jpg') ||
-                str_starts_with($entry, 'orig_') ||
-                str_starts_with($entry, 'tl_') ||
-                str_starts_with($entry, 'preview_') ||
-                preg_match('/-\d+\.jpg$/i', $entry)
-            ) {
-                continue;
-            }
-            $fullPath = $imagesDir . DIRECTORY_SEPARATOR . $entry;
-            $mtime = (int) @filemtime($fullPath);
-            if ($mtime >= $latestMtime) {
-                $latestMtime = $mtime;
-                $latestFile = $entry;
-            }
-        }
-    }
-    $filename = $latestFile !== '' ? $latestFile : 'demo_session.jpg';
+    $filename = $syncService->resolveLatestSessionFilename();
 }
 
 if ($filename) {
@@ -46,7 +36,6 @@ if ($filename) {
         exit();
     }
 
-    $syncService = SyncQueueService::getInstance();
     $sessionId = pathinfo($filename, PATHINFO_FILENAME);
     $imagesDir = FolderEnum::IMAGES->absolute();
     $savedQrFileName = 'qr_' . $sessionId . '.png';

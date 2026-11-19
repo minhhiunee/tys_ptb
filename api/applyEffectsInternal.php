@@ -8,7 +8,7 @@ $_POST['style'] = 'photo';
 $_POST['skip_lightroom'] = true;
 
 // Bypass CSRF for internal CLI execution
-function checkCsrfOrFail($source) {}
+function checkCsrfOrFail(array $source = [], string $key = 'csrf'): void {}
 
 // Fake $_SERVER variables that applyEffects.php might need
 $_SERVER['PHP_SELF'] = 'api/applyEffects.php';

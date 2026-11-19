@@ -78,13 +78,16 @@ class DatabaseManagerService
             }
             closedir($dh);
 
-            // filter the files to include only images with .jpg or .jpeg extensions
+            // filter the files to include only images with .jpg or .jpeg extensions, excluding internal backups/previews
             $images = preg_grep('/\.(jpg|jpeg)$/i', $files);
             if ($images === false) {
                 return [];
             }
 
-            return $images;
+            return array_values(array_filter(
+                $images,
+                fn(string $filename): bool => !$this->isInternalImageFile($filename)
+            ));
         } catch (\Exception $e) {
             // do nothing
         }
@@ -203,7 +206,11 @@ class DatabaseManagerService
         $output = [];
         foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($this->imageDirectory, \FilesystemIterator::SKIP_DOTS | \FilesystemIterator::UNIX_PATHS)) as $value) {
             if ($value->isFile() && strtolower(pathinfo($value->getFilename(), PATHINFO_EXTENSION)) === 'jpg') {
-                $output[] = [$value->getMTime(), $value->getFilename()];
+                $filename = $value->getFilename();
+                if ($this->isInternalImageFile($filename)) {
+                    continue;
+                }
+                $output[] = [$value->getMTime(), $filename];
             }
         }
 
@@ -228,6 +235,14 @@ class DatabaseManagerService
         } catch (\Exception $e) {
             return 'error';
         }
+    }
+
+    private function isInternalImageFile(string $filename): bool
+    {
+        return str_starts_with($filename, 'orig_')
+            || str_starts_with($filename, 'raw_pose_')
+            || str_starts_with($filename, 'tl_')
+            || str_starts_with($filename, 'preview_');
     }
 
     public static function getInstance(): self

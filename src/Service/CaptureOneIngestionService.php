@@ -91,7 +91,7 @@ class CaptureOneIngestionService
         }
         $headerBytes = (string) @fread($fp, 4);
         $tailBytes = '';
-        if ($size2 >= 2 && @fseek($fp, -2, SEEK_END) === 0) {
+        if (@fseek($fp, -2, SEEK_END) === 0) {
             $tailBytes = (string) @fread($fp, 2);
         }
         @fclose($fp);
@@ -105,11 +105,11 @@ class CaptureOneIngestionService
         }
 
         $imgInfo = @getimagesize($filePath);
-        if (!is_array($imgInfo) || ($imgInfo[0] ?? 0) <= 0 || ($imgInfo[1] ?? 0) <= 0) {
+        if (!is_array($imgInfo) || $imgInfo[0] <= 0 || $imgInfo[1] <= 0) {
             return ['valid' => false, 'reason' => 'corrupted_image_dimensions'];
         }
 
-        $mime = strtolower((string) ($imgInfo['mime'] ?? ''));
+        $mime = strtolower($imgInfo['mime']);
         if (!in_array($mime, self::ALLOWED_MIME_TYPES, true)) {
             return ['valid' => false, 'reason' => 'unsupported_mime:' . $mime];
         }

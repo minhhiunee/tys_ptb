@@ -191,6 +191,7 @@ try {
                 if (@copy($rawUngradedTmp, $rawSaveDest)) {
                     $vars['savedRawUngradedPoses'][] = $rawSaveName;
                 }
+                \Photobooth\Service\BanquetPrintService::getInstance()->recordRawCapture($rawUngradedTmp, $rawSaveName);
             }
 
             $poseSaveName = 'orig_pose_' . ($poseIdx + 1) . '_' . $vars['fileName'];
@@ -199,10 +200,12 @@ try {
                 if (@copy($posePath, $poseSaveDest)) {
                     $vars['savedOriginalPoses'][] = $poseSaveName;
                 }
+                \Photobooth\Service\BanquetPrintService::getInstance()->recordPendingFrame($posePath, $poseSaveName);
             } elseif (file_exists($poseSaveDest)) {
                 // Restore sub-file to data/tmp so Collage::createCollage succeeds on filter re-application
                 @copy($poseSaveDest, $posePath);
                 $vars['savedOriginalPoses'][] = $poseSaveName;
+                \Photobooth\Service\BanquetPrintService::getInstance()->recordPendingFrame($poseSaveDest, $poseSaveName);
             }
         }
 
@@ -375,7 +378,7 @@ try {
     }
 
     // Pre-generate and save the companion QR code image (qr_<sessionId>.png) alongside the photo for instant History/Gallery access
-    if (isset($metaData) && is_array($metaData) && !empty($vars['sessionId'])) {
+    if (!empty($vars['sessionId'])) {
         $qrTargetUrl = \Photobooth\Service\SyncQueueService::getInstance()->resolveQrTargetUrl((string) $vars['fileName']);
         $qrSavedFile = 'qr_' . $vars['sessionId'] . '.png';
         $qrSavedPath = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $qrSavedFile;
@@ -738,15 +741,23 @@ try {
         'final_photo' => $vars['fileName'],
         'gif_photo' => $vars['gifFileName'] ?? null,
         'original_photos' => $vars['savedOriginalPoses'] ?? [],
-        'metadata' => $metaData ?? [],
+        'metadata' => $metaData,
     ]);
 } catch (\Throwable $syncErr) {
     $logger->warning('SyncQueue enqueue warning: ' . $syncErr->getMessage());
 }
 
-// Register completed PTB4 strip into the 2-strip pair print queue (Canon SELPHY CP1500)
+// Register completed PTB4 strip into 03_framed and the 2-strip pair print queue (04_print_instant)
 $printPairStatus = null;
 try {
+    $framedFileAbs = FolderEnum::IMAGES->absolute() . DIRECTORY_SEPARATOR . $vars['fileName'];
+    if (is_file($framedFileAbs)) {
+        \Photobooth\Service\BanquetPrintService::getInstance()->recordFramedStrip(
+            $framedFileAbs,
+            (string) $vars['fileName'],
+            $metaData
+        );
+    }
     $printPairStatus = \Photobooth\Service\PrintPairService::getInstance()->registerStrip(
         (string) $vars['fileName'],
         (string) ($metaData['layout'] ?? $config['collage']['layout'] ?? ''),
