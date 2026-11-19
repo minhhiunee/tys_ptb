@@ -1,0 +1,180 @@
+﻿{
+    "timestamp":  "2026-11-20T02:26:31.0938551+07:00",
+    "base_url":  "http://localhost",
+    "iterations":  5,
+    "summary":  {
+                    "boot_sequential_ms":  457.97,
+                    "measured_static_kb":  1112.9,
+                    "uncompressed_text_count":  0
+                },
+    "endpoints":  [
+                      {
+                          "Label":  "Index HTML (normal)",
+                          "Path":  "/",
+                          "Status":  200,
+                          "AvgMs":  339.88,
+                          "MinMs":  289.49,
+                          "MaxMs":  446.18,
+                          "P95Ms":  357.03,
+                          "SizeKB":  27.8,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "Index HTML (?refresh=1)",
+                          "Path":  "/?refresh=1",
+                          "Status":  200,
+                          "AvgMs":  237.61,
+                          "MinMs":  129.88,
+                          "MaxMs":  287.32,
+                          "P95Ms":  274.22,
+                          "SizeKB":  28,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache, max-age=0"
+                      },
+                      {
+                          "Label":  "API settings.php",
+                          "Path":  "/api/settings.php",
+                          "Status":  200,
+                          "AvgMs":  39.76,
+                          "MinMs":  34.96,
+                          "MaxMs":  53.37,
+                          "P95Ms":  39.1,
+                          "SizeKB":  4.6,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "API translations.php",
+                          "Path":  "/api/translations.php",
+                          "Status":  200,
+                          "AvgMs":  35.29,
+                          "MinMs":  34.13,
+                          "MaxMs":  36.39,
+                          "P95Ms":  36.28,
+                          "SizeKB":  22.7,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "API sounds.php",
+                          "Path":  "/api/sounds.php",
+                          "Status":  200,
+                          "AvgMs":  43.04,
+                          "MinMs":  31.45,
+                          "MaxMs":  77.18,
+                          "P95Ms":  40.9,
+                          "SizeKB":  0.1,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "API presets.php (GET)",
+                          "Path":  "/api/presets.php",
+                          "Status":  200,
+                          "AvgMs":  140.68,
+                          "MinMs":  78.52,
+                          "MaxMs":  207.65,
+                          "P95Ms":  158.28,
+                          "SizeKB":  1.7,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "API syncStatus.php",
+                          "Path":  "/api/syncStatus.php",
+                          "Status":  200,
+                          "AvgMs":  104.26,
+                          "MinMs":  89.06,
+                          "MaxMs":  134.42,
+                          "P95Ms":  105.81,
+                          "SizeKB":  6.7,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "API gallery.php?status",
+                          "Path":  "/api/gallery.php?status",
+                          "Status":  200,
+                          "AvgMs":  76.86,
+                          "MinMs":  71.05,
+                          "MaxMs":  82.16,
+                          "P95Ms":  78.1,
+                          "SizeKB":  0,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "API qrcode.php (latest)",
+                          "Path":  "/api/qrcode.php?filename=latest\u0026json=1",
+                          "Status":  200,
+                          "AvgMs":  131.55,
+                          "MinMs":  110.63,
+                          "MaxMs":  179.41,
+                          "P95Ms":  127.5,
+                          "SizeKB":  0.2,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "no-store, must-revalidate, no-cache"
+                      },
+                      {
+                          "Label":  "JS core.js",
+                          "Path":  "/resources/js/core.js",
+                          "Status":  200,
+                          "AvgMs":  16.99,
+                          "MinMs":  12.16,
+                          "MaxMs":  20.57,
+                          "P95Ms":  18.7,
+                          "SizeKB":  16.3,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "public, max-age=2592000"
+                      },
+                      {
+                          "Label":  "JS presets-ui.js",
+                          "Path":  "/resources/js/presets-ui.js",
+                          "Status":  200,
+                          "AvgMs":  14.73,
+                          "MinMs":  11.51,
+                          "MaxMs":  19.33,
+                          "P95Ms":  15.46,
+                          "SizeKB":  9.8,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "public, max-age=2592000"
+                      },
+                      {
+                          "Label":  "JS tools.js",
+                          "Path":  "/resources/js/tools.js",
+                          "Status":  200,
+                          "AvgMs":  10.49,
+                          "MinMs":  8.76,
+                          "MaxMs":  13.38,
+                          "P95Ms":  11.18,
+                          "SizeKB":  7.2,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "public, max-age=2592000"
+                      },
+                      {
+                          "Label":  "CSS framework.css",
+                          "Path":  "/resources/css/framework.css",
+                          "Status":  200,
+                          "AvgMs":  11.61,
+                          "MinMs":  9.86,
+                          "MaxMs":  13,
+                          "P95Ms":  12.42,
+                          "SizeKB":  7.7,
+                          "Encoding":  "gzip",
+                          "CacheControl":  "public, max-age=2592000"
+                      },
+                      {
+                          "Label":  "IMG background.png",
+                          "Path":  "/resources/img/background.png",
+                          "Status":  200,
+                          "AvgMs":  36.56,
+                          "MinMs":  18.42,
+                          "MaxMs":  72.65,
+                          "P95Ms":  49.75,
+                          "SizeKB":  1071.9,
+                          "Encoding":  "none",
+                          "CacheControl":  "public, max-age=2592000"
+                      }
+                  ]
+}

@@ -118,6 +118,8 @@ class ColorPresetProcessor
         ?string $frameOverlayPath = null,
         int $jpegQuality = 95
     ): bool {
+        $original = null;
+        $processed = null;
         try {
             $original = new \Imagick($sourceImagePath);
             $original->transformImageColorspace(\Imagick::COLORSPACE_SRGB);
@@ -160,18 +162,20 @@ class ColorPresetProcessor
             }
 
             $finalImg->setImageCompressionQuality(max(60, min(100, $jpegQuality)));
-            $result = $finalImg->writeImage($targetImagePath);
-
-            $processed->clear();
-            $processed->destroy();
-            $original->clear();
-            $original->destroy();
-
-            return $result;
+            return $finalImg->writeImage($targetImagePath);
         } catch (\Throwable $e) {
             $this->logger->error("Imagick preset processing failed: " . $e->getMessage());
             // Fallback to copy original if processing fails
             return copy($sourceImagePath, $targetImagePath);
+        } finally {
+            if ($processed instanceof \Imagick) {
+                $processed->clear();
+                $processed->destroy();
+            }
+            if ($original instanceof \Imagick) {
+                $original->clear();
+                $original->destroy();
+            }
         }
     }
 
@@ -228,8 +232,10 @@ class ColorPresetProcessor
         ?string $frameOverlayPath = null,
         int $jpegQuality = 95
     ): bool {
+        $src = null;
+        $processed = null;
         try {
-            $src = imagecreatefromjpeg($sourceImagePath);
+            $src = @imagecreatefromjpeg($sourceImagePath);
             if (!$src) {
                 return copy($sourceImagePath, $targetImagePath);
             }
@@ -238,6 +244,9 @@ class ColorPresetProcessor
             $h = imagesy($src);
 
             $processed = imagecreatetruecolor($w, $h);
+            if (!$processed) {
+                return copy($sourceImagePath, $targetImagePath);
+            }
             imagecopy($processed, $src, 0, 0, 0, 0, $w, $h);
 
             // Apply contrast and brightness adjustments using GD filters
@@ -272,14 +281,17 @@ class ColorPresetProcessor
                 }
             }
 
-            $result = imagejpeg($final, $targetImagePath, max(60, min(100, $jpegQuality)));
-            imagedestroy($src);
-            imagedestroy($processed);
-
-            return $result;
+            return imagejpeg($final, $targetImagePath, max(60, min(100, $jpegQuality)));
         } catch (\Throwable $e) {
             $this->logger->error("GD preset processing failed: " . $e->getMessage());
             return copy($sourceImagePath, $targetImagePath);
+        } finally {
+            if ($src instanceof \GdImage) {
+                imagedestroy($src);
+            }
+            if ($processed instanceof \GdImage) {
+                imagedestroy($processed);
+            }
         }
     }
 }

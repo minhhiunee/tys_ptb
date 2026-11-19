@@ -12,6 +12,8 @@ class AutoVersionStrategy implements VersionStrategyInterface
     private ?array $revisionData = null;
     private ?string $packageLockHash = null;
     private bool $packageLockLoaded = false;
+    /** @var array<string, string> */
+    private array $versionCache = [];
 
     public function __construct()
     {
@@ -56,15 +58,19 @@ class AutoVersionStrategy implements VersionStrategyInterface
 
     public function getVersion(string $path): string
     {
+        if (isset($this->versionCache[$path])) {
+            return $this->versionCache[$path];
+        }
+
         // all api calls should not be cached at all
         if (str_starts_with($path, 'api')) {
-            return $this->requestTime->format('YmdHis');
+            return $this->versionCache[$path] = $this->requestTime->format('YmdHis');
         }
 
         // node modules should only be updated when
         // the locked packages are changed
         if (str_starts_with($path, 'node_modules')) {
-            return $this->getPackageLockHash() ?? '';
+            return $this->versionCache[$path] = ($this->getPackageLockHash() ?? '');
         }
 
         // always check private files for changed
@@ -75,7 +81,7 @@ class AutoVersionStrategy implements VersionStrategyInterface
                 $mtime = @filemtime($absolutePath);
                 $size = @filesize($absolutePath);
                 if ($mtime !== false) {
-                    return $mtime . '-' . ($size ?: 0);
+                    return $this->versionCache[$path] = $mtime . '-' . ($size ?: 0);
                 }
             }
         }
@@ -85,7 +91,7 @@ class AutoVersionStrategy implements VersionStrategyInterface
         if (is_file($absolutePath)) {
             $mtime = @filemtime($absolutePath);
             if ($mtime !== false) {
-                return (string) $mtime;
+                return $this->versionCache[$path] = (string) $mtime;
             }
         }
 
@@ -94,12 +100,12 @@ class AutoVersionStrategy implements VersionStrategyInterface
         // applied when a hash exists.
         $revisions = $this->getRevisionData();
         if ($revisions[$path] ?? null) {
-            return $revisions[$path];
+            return $this->versionCache[$path] = $revisions[$path];
         }
 
         // all other resources are considered not
         // versioned, no version will be generated
-        return '';
+        return $this->versionCache[$path] = '';
     }
 
     public function applyVersion(string $path): string

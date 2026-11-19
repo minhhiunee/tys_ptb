@@ -200,15 +200,15 @@ try {
         if (!$isC1TetheredCamera) {
             $shotStats = $colorWorkflow->processPrimaryCapture($captureHandler->tmpFile, $tlSession, $tlPose);
             $logger->debug('Primary capture color workflow completed', $shotStats);
-        }
 
-        if (!empty($savedTlPaths)) {
-            if ($canDefer) {
-                $deferredGradePaths = $savedTlPaths;
-                $gradeFlagFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('tl_%s_p%02d.grading', $tlSession, $tlPose);
-                @file_put_contents($gradeFlagFile, (string) time());
-            } else {
-                $colorWorkflow->gradeFilesInPlace($savedTlPaths);
+            if (!empty($savedTlPaths)) {
+                if ($canDefer) {
+                    $deferredGradePaths = $savedTlPaths;
+                    $gradeFlagFile = FolderEnum::TEMP->absolute() . DIRECTORY_SEPARATOR . sprintf('tl_%s_p%02d.grading', $tlSession, $tlPose);
+                    @file_put_contents($gradeFlagFile, (string) time());
+                } else {
+                    $colorWorkflow->gradeFilesInPlace($savedTlPaths);
+                }
             }
         }
     }

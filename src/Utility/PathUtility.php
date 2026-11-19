@@ -31,6 +31,13 @@ class PathUtility
     private static array $baseUrlCache = [];
 
     /**
+     * Cached absolute paths keyed by input path string for current request lifecycle.
+     *
+     * @var array<string, string>
+     */
+    private static array $absolutePathCache = [];
+
+    /**
      * Returns the absolute filesystem path to the project root directory.
      *
      * The result is cached for subsequent calls and always includes a trailing
@@ -67,20 +74,27 @@ class PathUtility
             return '';
         }
 
+        if (isset(self::$absolutePathCache[$path])) {
+            return self::$absolutePathCache[$path];
+        }
+
         $documentRoot = self::getRootPath();
-        $path = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
+        $normalizedPath = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $path);
 
-        if (self::isAbsolutePath($path) && str_starts_with($path, self::getRootPath())) {
-            return $path;
+        if (self::isAbsolutePath($normalizedPath) && str_starts_with($normalizedPath, $documentRoot)) {
+            return self::$absolutePathCache[$path] = $normalizedPath;
         }
 
-        $absolutePath = $documentRoot . ltrim($path, DIRECTORY_SEPARATOR);
-        $absolutePath = preg_replace('#' . DIRECTORY_SEPARATOR . '+#', DIRECTORY_SEPARATOR, (string) realpath($absolutePath));
-        if ($absolutePath && strpos($absolutePath, $documentRoot) === 0) {
-            return $absolutePath;
+        $absolutePath = $documentRoot . ltrim($normalizedPath, DIRECTORY_SEPARATOR);
+        $realPath = realpath($absolutePath);
+        if ($realPath !== false) {
+            $normalizedReal = preg_replace('#' . DIRECTORY_SEPARATOR . '+#', DIRECTORY_SEPARATOR, $realPath);
+            if ($normalizedReal && strpos($normalizedReal, $documentRoot) === 0) {
+                return self::$absolutePathCache[$path] = $normalizedReal;
+            }
         }
 
-        return $documentRoot . ltrim($path, DIRECTORY_SEPARATOR);
+        return self::$absolutePathCache[$path] = $documentRoot . ltrim($normalizedPath, DIRECTORY_SEPARATOR);
     }
 
     /**

@@ -21,25 +21,22 @@ class ImageMetadataCacheService
             if ($data !== false) {
                 $decoded = json_decode($data, true);
                 if (is_array($decoded)) {
-                    $this->cache = array_reduce(
-                        array_keys($decoded),
-                        function (array $carry, string $key) use ($decoded): array {
-                            $value = $decoded[$key];
-                            if (
-                                is_array($value)
-                                && isset($value['width'], $value['height'])
-                                && is_int($value['width'])
-                                && is_int($value['height'])
-                            ) {
-                                $carry[$key] = [
-                                    'width' => $value['width'],
-                                    'height' => $value['height'],
-                                ];
-                            }
-                            return $carry;
-                        },
-                        []
-                    );
+                    $cache = [];
+                    foreach ($decoded as $key => $value) {
+                        if (
+                            is_string($key)
+                            && is_array($value)
+                            && isset($value['width'], $value['height'])
+                            && is_int($value['width'])
+                            && is_int($value['height'])
+                        ) {
+                            $cache[$key] = [
+                                'width' => $value['width'],
+                                'height' => $value['height'],
+                            ];
+                        }
+                    }
+                    $this->cache = $cache;
                 }
             }
         }
@@ -112,6 +109,15 @@ class ImageMetadataCacheService
         $encoded = json_encode($this->cache);
         if ($encoded === false) {
             return;
+        }
+
+        $tmpFile = $cacheFile . '.tmp.' . uniqid('', true);
+        if (@file_put_contents($tmpFile, $encoded, LOCK_EX) !== false) {
+            if (@rename($tmpFile, $cacheFile)) {
+                $this->dirty = false;
+                return;
+            }
+            @unlink($tmpFile);
         }
 
         @file_put_contents($cacheFile, $encoded);

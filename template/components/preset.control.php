@@ -790,11 +790,11 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
     display: none;
     position: fixed !important;
     top: 50% !important;
-    right: 24px !important;
+    right: 28px !important;
     bottom: auto !important;
     left: auto !important;
     transform: translateY(-50%) !important;
-    width: 300px !important;
+    width: 350px !important;
     max-width: calc(100vw - 48px) !important;
     margin: 0 !important;
     padding: 0 !important;
@@ -817,14 +817,16 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
     flex-direction: column;
     align-items: stretch;
     justify-content: flex-start;
-    gap: 14px;
+    gap: 20px;
     width: 100%;
+    max-height: calc(100dvh - 48px);
+    overflow-y: auto;
     background: rgba(13, 7, 36, 0.94);
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border: 1.5px solid rgba(167, 139, 250, 0.38);
-    border-radius: 24px;
-    padding: 18px 16px;
+    border-radius: 28px;
+    padding: 24px 20px;
     box-shadow: 0 24px 56px -10px rgba(0, 0, 0, 0.8), 0 0 28px rgba(139, 92, 246, 0.24);
     color: var(--km-text-primary);
     box-sizing: border-box;
@@ -834,29 +836,29 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
+    gap: 16px;
     width: 100%;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(167, 139, 250, 0.24);
+    padding-bottom: 20px;
+    border-bottom: 1.5px solid rgba(167, 139, 250, 0.28);
 }
 .dock-right-actions {
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    gap: 10px;
+    gap: 16px;
     width: 100%;
 }
 
 .compare-btn {
     width: 100%;
-    min-height: 52px;
-    padding: 10px 18px;
+    min-height: 64px;
+    padding: 14px 22px;
     background: rgba(22, 14, 58, 0.92);
     border: 1.5px solid rgba(56, 189, 248, 0.45);
-    border-radius: 14px;
+    border-radius: 18px;
     color: #F8FAFC;
     font-family: var(--km-font-sans);
-    font-size: 15px;
+    font-size: 17px;
     font-weight: 800;
     cursor: pointer;
     touch-action: manipulation;
@@ -864,12 +866,12 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 12px;
     box-sizing: border-box;
     transition: all 0.15s ease;
 }
 .compare-btn i {
-    font-size: 17px;
+    font-size: 20px;
     color: #38BDF8;
 }
 .compare-btn:hover {
@@ -889,18 +891,21 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
 
 .dock-status-pill {
     width: 100%;
-    min-height: 44px;
+    min-height: 52px;
     font-family: var(--km-font-sans);
-    font-size: 14px;
-    font-weight: 700;
-    padding: 8px 14px;
-    border-radius: 13px;
+    font-size: 16px;
+    font-weight: 750;
+    padding: 12px 18px;
+    border-radius: 16px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 8px;
+    gap: 10px;
     white-space: nowrap;
     box-sizing: border-box;
+}
+.dock-status-pill i {
+    font-size: 18px;
 }
 .dock-status-pill.ready-pill {
     background: rgba(22, 14, 58, 0.85);
@@ -920,11 +925,11 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
 
 .preset-action-btn {
     width: 100%;
-    min-height: 54px;
-    padding: 12px 18px;
-    border-radius: 15px;
+    min-height: 64px;
+    padding: 14px 22px;
+    border-radius: 18px;
     font-family: var(--km-font-sans);
-    font-size: 15.5px;
+    font-size: 17.5px;
     font-weight: 800;
     cursor: pointer;
     touch-action: manipulation;
@@ -932,13 +937,13 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 12px;
     white-space: nowrap;
     box-sizing: border-box;
     transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .preset-action-btn i {
-    font-size: 17px;
+    font-size: 20px;
 }
 .preset-action-btn:active {
     transform: scale(0.97);
@@ -964,16 +969,19 @@ $evTitleUrl = $assetService->getUrl('resources/img/event/tram-tinh-ha-sm.png');
     color: #FFFFFF;
 }
 .preset-action-btn.btn-confirm {
-    min-height: 58px;
-    font-size: 16px;
+    min-height: 72px;
+    font-size: 19px;
     background: linear-gradient(135deg, #2563EB, #1D4ED8);
     border: 1.5px solid #60A5FA;
     color: #FFFFFF;
-    box-shadow: 0 8px 22px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 8px 24px rgba(37, 99, 235, 0.45);
+}
+.preset-action-btn.btn-confirm i {
+    font-size: 22px;
 }
 .preset-action-btn.btn-confirm:hover {
     background: linear-gradient(135deg, #1D4ED8, #1E40AF);
-    box-shadow: 0 10px 26px rgba(37, 99, 235, 0.55);
+    box-shadow: 0 10px 28px rgba(37, 99, 235, 0.6);
     transform: translateY(-1px);
 }
 

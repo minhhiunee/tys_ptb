@@ -283,6 +283,8 @@ class PrintPairService
 
     /**
      * Compose any 2 arbitrary strip files (Left + Right) onto the Canon SELPHY CP1500 4x6" canvas (1969x2913, 300 DPI, 4:4:4).
+     *
+     * @return array{success: bool, error?: string, left_file?: string, right_file?: string, width?: int, height?: int}
      */
     public function composeFilesForPrint(string $leftPath, string $rightPath, string $destPrintPath, int $jpegQuality = 100): array
     {

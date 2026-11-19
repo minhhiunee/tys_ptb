@@ -85,10 +85,10 @@ echo '</div>';
     top: 50% !important;
     left: 50% !important;
     transform: translate(-50%, -50%) !important;
-    width: min(98vw, calc(97dvh * 1.5)) !important;
-    height: min(97dvh, calc(98vw / 1.5)) !important;
-    max-width: 98vw !important;
-    max-height: 97dvh !important;
+    width: min(100vw, calc(100dvh * 1.5)) !important;
+    height: min(100dvh, calc(100vw / 1.5)) !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
     aspect-ratio: 3 / 2 !important;
     display: flex !important;
     align-items: center !important;
@@ -96,7 +96,7 @@ echo '</div>';
     margin: 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
-    border-radius: 20px !important;
+    border-radius: 0 !important;
     background: transparent !important;
     border: none !important;
     box-shadow: none !important;
@@ -125,11 +125,9 @@ echo '</div>';
     max-width: 100% !important;
     max-height: 100% !important;
     object-fit: cover !important;
-    border-radius: 18px !important;
+    border-radius: 0 !important;
     background: #000000 !important;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 
-                0 0 0 2px rgba(167, 139, 250, 0.45), 
-                0 0 60px rgba(99, 102, 241, 0.3) !important;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.85) !important;
 }
 
 #preview--none {
@@ -176,10 +174,10 @@ echo '</div>';
 }
 
 .stage--loader .stage-image {
-    width: min(98vw, calc(97dvh * 1.5)) !important;
-    height: min(97dvh, calc(98vw / 1.5)) !important;
-    max-width: 98vw !important;
-    max-height: 97dvh !important;
+    width: min(100vw, calc(100dvh * 1.5)) !important;
+    height: min(100dvh, calc(100vw / 1.5)) !important;
+    max-width: 100vw !important;
+    max-height: 100dvh !important;
     aspect-ratio: 3 / 2 !important;
     top: 50% !important;
     left: 50% !important;
@@ -187,8 +185,8 @@ echo '</div>';
     background-size: cover !important;
     background-position: center center !important;
     background-repeat: no-repeat !important;
-    border-radius: 18px !important;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8), 0 0 0 2px rgba(167, 139, 250, 0.45) !important;
+    border-radius: 0 !important;
+    box-shadow: 0 0 60px rgba(0, 0, 0, 0.85) !important;
     z-index: 12 !important;
 }
 

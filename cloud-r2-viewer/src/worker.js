@@ -387,8 +387,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       --font-main: "Be Vietnam Pro", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       --font-heading: "Outfit", "Be Vietnam Pro", sans-serif;
       --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
-      --top-pad: max(8px, env(safe-area-inset-top));
-      --bottom-pad: max(8px, env(safe-area-inset-bottom));
+      --top-pad: max(4px, env(safe-area-inset-top));
+      --bottom-pad: max(4px, env(safe-area-inset-bottom));
     }
 
     * {
@@ -449,11 +449,11 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      padding: var(--top-pad) 10px var(--bottom-pad);
-      gap: 6px;
+      padding: var(--top-pad) 6px var(--bottom-pad);
+      gap: 3px;
     }
 
-    /* 1. Compact Header: Logo + Chào Tân Sinh Viên 2026 + TRẠM TINH HÀ underneath */
+    /* 1. Ultra-Compact Header: Logo + Chào Tân Sinh Viên 2026 + TRẠM TINH HÀ */
     .viewer-top-bar {
       flex-shrink: 0;
       width: 100%;
@@ -463,34 +463,34 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      padding: 5px 10px 5px 7px;
-      min-height: 46px;
+      gap: 6px;
+      padding: 3px 8px 3px 6px;
+      min-height: 36px;
       background: var(--glass-bg);
-      backdrop-filter: blur(22px);
-      -webkit-backdrop-filter: blur(22px);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--glass-border);
-      border-radius: 16px;
-      box-shadow: 0 8px 24px rgba(3, 1, 16, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(3, 1, 16, 0.45);
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
 
     .brand-cluster {
       display: flex;
       align-items: center;
-      gap: 9px;
+      gap: 7px;
       min-width: 0;
       flex: 1;
     }
 
     .brand-logo-badge {
-      width: 34px;
-      height: 34px;
+      width: 26px;
+      height: 26px;
       border-radius: 50%;
       background: #FFFFFF;
-      padding: 1.5px;
+      padding: 1px;
       flex-shrink: 0;
-      box-shadow: 0 0 12px rgba(125, 211, 252, 0.45);
+      box-shadow: 0 0 10px rgba(125, 211, 252, 0.45);
       object-fit: contain;
     }
 
@@ -499,14 +499,14 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       flex-direction: column;
       align-items: flex-start;
       justify-content: center;
-      gap: 2px;
+      gap: 1px;
       min-width: 0;
       flex: 1;
     }
 
     .brand-chao-img {
       display: block;
-      height: 10px;
+      height: 8px;
       width: auto;
       max-width: 100%;
       object-fit: contain;
@@ -515,7 +515,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
 
     .brand-title-img {
       display: block;
-      height: 17px;
+      height: 14px;
       width: auto;
       max-width: 100%;
       object-fit: contain;
@@ -525,29 +525,29 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     .header-actions {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       flex-shrink: 0;
     }
 
     .session-badge {
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 9.5px;
       font-variant-numeric: tabular-nums;
       color: #CBD5E1;
       background: rgba(56, 189, 248, 0.12);
       border: 1px solid rgba(125, 211, 252, 0.28);
-      padding: 3px 7px;
-      border-radius: 7px;
-      max-width: 112px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      max-width: 115px;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
 
     .icon-btn {
-      width: 30px;
-      height: 30px;
-      border-radius: 9px;
+      width: 26px;
+      height: 26px;
+      border-radius: 8px;
       border: 1px solid var(--glass-border);
       background: rgba(255, 255, 255, 0.06);
       color: var(--text-pure);
@@ -557,7 +557,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       cursor: pointer;
     }
 
-    /* 2. Full-Screen Photo & GIF Hero Stage */
+    /* 2. Full-Screen Photo & GIF Hero Stage - Maximized for Vertical Photo Strips */
     .photo-stage {
       position: relative;
       flex: 1 1 0%;
@@ -569,7 +569,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      padding: 2px;
+      padding: 0;
+      margin: 0;
       cursor: zoom-in;
       background: transparent !important;
       background-color: transparent !important;
@@ -577,8 +578,6 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
 
     .image-wrapper {
       position: relative;
-      max-width: 100%;
-      max-height: 100%;
       width: 100%;
       height: 100%;
       display: flex;
@@ -595,19 +594,19 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       cursor: zoom-out;
     }
 
-    /* Stretch both static photo AND animated GIF prominently with no surrounding white box */
+    /* Stretch both static photo AND animated GIF to 100% of available height with no artificial cap */
     .media-display {
       display: none;
       width: auto !important;
-      height: min(100%, 88vh, calc(100dvh - 102px)) !important;
-      max-width: min(100%, 96vw) !important;
-      max-height: min(100%, 88vh, calc(100dvh - 102px)) !important;
+      height: 100% !important;
+      max-height: 100% !important;
+      max-width: min(100%, 98vw) !important;
       object-fit: contain;
       border: none !important;
       outline: none !important;
       box-shadow: none !important;
-      border-radius: 8px;
-      filter: drop-shadow(0 16px 36px rgba(2, 1, 14, 0.92));
+      border-radius: 6px;
+      filter: drop-shadow(0 14px 34px rgba(2, 1, 14, 0.94));
       transition: opacity 0.2s ease, filter 0.2s ease;
       pointer-events: auto;
       background: transparent !important;
@@ -623,20 +622,20 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       backdrop-filter: blur(24px);
       -webkit-backdrop-filter: blur(24px);
       border: 1px solid var(--glass-border);
-      padding: 24px 20px;
-      border-radius: 18px;
+      padding: 20px 18px;
+      border-radius: 16px;
       text-align: center;
-      max-width: 320px;
+      max-width: 300px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 10px;
+      gap: 8px;
       box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6);
     }
 
     .spinner {
-      width: 32px;
-      height: 32px;
+      width: 28px;
+      height: 28px;
       border: 3px solid rgba(56, 189, 248, 0.2);
       border-top-color: var(--cyan-1);
       border-radius: 50%;
@@ -645,10 +644,10 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    .state-title { font-size: 14.5px; font-weight: 700; color: var(--text-pure); }
-    .state-desc { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
+    .state-title { font-size: 14px; font-weight: 700; color: var(--text-pure); }
+    .state-desc { font-size: 11.5px; color: var(--text-muted); line-height: 1.4; }
 
-    /* 3. Floating Bottom Control Island */
+    /* 3. Floating Bottom Control Island - Compact & Pushed Completely to Bottom */
     .viewer-dock {
       flex-shrink: 0;
       width: 100%;
@@ -657,7 +656,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       z-index: 20;
       display: none;
       flex-direction: column;
-      gap: 5px;
+      gap: 4px;
+      padding-bottom: 2px;
       transition: opacity 0.25s ease, transform 0.25s ease;
     }
 
@@ -672,10 +672,10 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       border: 1px solid var(--glass-border);
-      padding: 3px;
+      padding: 2px;
       border-radius: 999px;
-      gap: 4px;
-      box-shadow: 0 8px 20px rgba(3, 1, 16, 0.5);
+      gap: 3px;
+      box-shadow: 0 4px 16px rgba(3, 1, 16, 0.45);
     }
 
     .media-switcher.visible {
@@ -685,14 +685,14 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     .switch-pill {
       display: flex;
       align-items: center;
-      gap: 5px;
-      min-height: 29px;
-      padding: 0 13px;
+      gap: 4px;
+      min-height: 24px;
+      padding: 0 11px;
       border-radius: 999px;
       border: 1px solid transparent;
       background: transparent;
       color: var(--text-muted);
-      font-size: 11.5px;
+      font-size: 11px;
       font-weight: 700;
       cursor: pointer;
       transition: background 0.16s ease, color 0.16s ease, transform 0.12s ease;
@@ -709,33 +709,33 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     .switch-pill.active {
       background: linear-gradient(135deg, var(--cyan-1), var(--violet-1));
       color: #07041A;
-      box-shadow: 0 3px 14px rgba(56, 189, 248, 0.4);
+      box-shadow: 0 2px 10px rgba(56, 189, 248, 0.35);
     }
 
     .action-row {
       display: flex;
       align-items: center;
-      gap: 6px;
+      gap: 5px;
       width: 100%;
     }
 
     .btn-primary {
       flex: 1;
-      min-height: 42px;
-      padding: 8px 14px;
-      border-radius: 12px;
+      min-height: 36px;
+      padding: 6px 14px;
+      border-radius: 10px;
       border: 1px solid rgba(110, 231, 183, 0.35);
       background: linear-gradient(135deg, var(--emerald-1), var(--emerald-2));
       color: #FFFFFF;
-      font-size: 13.5px;
-      font-weight: 700;
+      font-size: 12.5px;
+      font-weight: 750;
       display: flex;
       align-items: center;
       justify-content: center;
-      gap: 7px;
+      gap: 6px;
       cursor: pointer;
       text-decoration: none;
-      box-shadow: 0 6px 20px rgba(16, 185, 129, 0.35);
+      box-shadow: 0 4px 16px rgba(16, 185, 129, 0.32);
       transition: transform 0.12s ease, filter 0.15s ease;
     }
 
@@ -745,31 +745,31 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     }
 
     .btn-secondary {
-      min-height: 42px;
-      padding: 8px 12px;
-      border-radius: 12px;
+      min-height: 36px;
+      padding: 6px 11px;
+      border-radius: 10px;
       border: 1px solid rgba(125, 211, 252, 0.42);
       background: var(--glass-bg);
       backdrop-filter: blur(20px);
       -webkit-backdrop-filter: blur(20px);
       color: var(--cyan-1);
-      font-size: 12.5px;
+      font-size: 11.5px;
       font-weight: 700;
       display: none;
       align-items: center;
       justify-content: center;
-      gap: 5px;
+      gap: 4px;
       cursor: pointer;
       text-decoration: none;
       white-space: nowrap;
-      box-shadow: 0 4px 14px rgba(3, 1, 16, 0.45);
+      box-shadow: 0 4px 12px rgba(3, 1, 16, 0.35);
     }
 
     .btn-icon-share {
-      width: 42px;
-      height: 42px;
+      width: 36px;
+      height: 36px;
       flex-shrink: 0;
-      border-radius: 12px;
+      border-radius: 10px;
       border: 1px solid var(--glass-border);
       background: var(--glass-bg);
       backdrop-filter: blur(20px);
@@ -780,7 +780,7 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       justify-content: center;
       cursor: pointer;
       transition: background-color 0.15s ease, transform 0.12s ease;
-      box-shadow: 0 4px 14px rgba(3, 1, 16, 0.45);
+      box-shadow: 0 4px 12px rgba(3, 1, 16, 0.35);
     }
 
     .btn-icon-share:active {
@@ -790,19 +790,13 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     .bottom-guidance {
       text-align: center;
       padding: 1px 4px 0;
-      line-height: 1.3;
+      line-height: 1.2;
     }
 
     .guide-text {
-      font-size: 10px;
-      color: #CBD5E1;
-      font-weight: 500;
-    }
-
-    .meta-sub {
       font-size: 9.5px;
       color: #94A3B8;
-      margin-top: 1px;
+      font-weight: 500;
     }
 
     body.zen-mode .viewer-top-bar,
@@ -822,11 +816,11 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
     @media (min-width: 768px) {
       .viewer-top-bar,
       .viewer-dock {
-        max-width: 540px;
+        max-width: 520px;
       }
-      .brand-logo-badge { width: 38px; height: 38px; }
-      .brand-chao-img { height: 11px; }
-      .brand-title-img { height: 19px; }
+      .brand-logo-badge { width: 30px; height: 30px; }
+      .brand-chao-img { height: 9.5px; }
+      .brand-title-img { height: 16px; }
     }
   </style>
 </head>
@@ -893,8 +887,8 @@ function renderViewerHtml({ brandTitle, brandSubtitle, expireDays }) {
       </div>
 
       <div class="bottom-guidance">
-        <div class="guide-text">💡 Giữ ảnh để Lưu vào Album • Chạm 2 lần để phóng to • Tự động lưu ${expireDays} ngày</div>
-        <div class="meta-sub" id="footer-meta">Phiên: <span id="session-foot">--</span></div>
+        <span class="guide-text">💡 Giữ ảnh để lưu • Chạm 2 lần để phóng to • Tự động lưu ${expireDays} ngày</span>
+        <span id="footer-meta" style="display:none;"><span id="session-foot">--</span></span>
       </div>
     </footer>
   </main>

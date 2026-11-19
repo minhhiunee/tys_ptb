@@ -199,6 +199,35 @@ class SyncQueueService
     public function resolveLatestSessionFilename(string $fallback = 'demo_session.jpg'): string
     {
         $imagesDir = FolderEnum::IMAGES->absolute();
+
+        // 1. Fast path: check most recently queued session in sync_queue.json (<0.2ms)
+        $queue = $this->loadQueue();
+        if (!empty($queue)) {
+            $reversedQueue = array_reverse($queue, true);
+            foreach ($reversedQueue as $item) {
+                if (!is_array($item)) {
+                    continue;
+                }
+                $candidate = basename((string) ($item['final_photo'] ?? ($item['session_id'] ?? '') . '.jpg'));
+                if ($candidate !== '' && !str_starts_with($candidate, '.') && is_file($imagesDir . DIRECTORY_SEPARATOR . $candidate)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        // 2. Fast path: check last record from DatabaseManagerService (<0.5ms)
+        try {
+            $dbImages = DatabaseManagerService::getInstance()->getContentFromDB();
+            if (!empty($dbImages)) {
+                $lastImage = end($dbImages);
+                if (is_string($lastImage) && $lastImage !== '' && is_file($imagesDir . DIRECTORY_SEPARATOR . $lastImage)) {
+                    return $lastImage;
+                }
+            }
+        } catch (\Throwable) {
+        }
+
+        // 3. Fallback: scan directory if queue and DB are empty or missing
         $latestFile = '';
         $latestMtime = 0;
 
@@ -665,11 +694,20 @@ class SyncQueueService
         if (!is_dir($dir)) {
             @mkdir($dir, 0755, true);
         }
-        return file_put_contents(
-            $this->queueFile,
-            json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
-            LOCK_EX
-        ) !== false;
+        $encoded = json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            return false;
+        }
+
+        $tmpFile = $this->queueFile . '.tmp.' . uniqid('', true);
+        if (@file_put_contents($tmpFile, $encoded, LOCK_EX) !== false) {
+            if (@rename($tmpFile, $this->queueFile)) {
+                return true;
+            }
+            @unlink($tmpFile);
+        }
+
+        return file_put_contents($this->queueFile, $encoded, LOCK_EX) !== false;
     }
 
     /**

@@ -29,11 +29,9 @@ for d in [INPUT_DIR, OUTPUT_DIR, CAPTURE_DIR, LOG_DIR]:
 DESKTOP_ALL = 0x01FF
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
-VK_ESCAPE = 0x1B
 VK_SPACE = 0x20
 VK_CONTROL = 0x11
-VK_K = 0x4B
-VK_F7 = 0x76
+VK_K = 0x4B  # 0x4B is 'K'. Capture One official global capture shortcut is Ctrl+K (131147)
 # Unassigned virtual key code used to unlock Windows SetForegroundWindow without triggering WPF Alt Menu bars
 VK_UNLOCK_FG = 0x0E
 
@@ -155,11 +153,6 @@ def find_photobooth_browser():
 
 
 def force_foreground(hwnd, wait_confirm_ms=180):
-    """
-    Bring target window to foreground WITHOUT pressing VK_MENU (Alt 0x12).
-    Pressing Alt in WPF applications (like Capture One) activates the Menu Bar mnemonic mode,
-    which swallows subsequent Spacebar/F7 shutter pulses on Pose 3 & Pose 4.
-    """
     if not hwnd or not user32.IsWindow(hwnd):
         return False
     try:
@@ -180,8 +173,6 @@ def force_foreground(hwnd, wait_confirm_ms=180):
             if target_thread and target_thread != cur_thread:
                 user32.AttachThreadInput(cur_thread, target_thread, True)
 
-            # Use unassigned VK 0x0E instead of Alt (0x12) so Windows unlocks foreground restriction
-            # without activating any menu bar or system menu inside Capture One.
             user32.keybd_event(VK_UNLOCK_FG, 0, 0, 0)
             user32.BringWindowToTop(hwnd)
             user32.SetForegroundWindow(hwnd)
@@ -215,55 +206,35 @@ def focus_browser(browser_hwnd=None):
 
 def send_shutter_pulse(wins, target_hwnd, attempt=1):
     """
-    Send shutter trigger to Capture One and hold foreground long enough (220ms)
-    for Capture One's WPF UI dispatcher to fire the USB PTP shutter command,
-    even when Capture One is busy building previews for Poses 1-3 on Pose 4.
+    Send shutter trigger to Capture One using native Ctrl+K (global Capture command).
+    NEVER use F7 (in Capture One F7 creates 'New Variant' [1], [2], [3], [4]).
+    NEVER use ESC (ESC cancels active camera autofocus and exposure).
     """
-    live_hwnd = wins.get("live_view")
     main_hwnd = wins.get("main") or wins.get("c1_other")
+    live_hwnd = wins.get("live_view")
 
-    if live_hwnd:
-        force_foreground(live_hwnd, wait_confirm_ms=220)
+    # Primary: trigger Capture One via official Ctrl+K on Main Window
+    if main_hwnd:
+        force_foreground(main_hwnd, wait_confirm_ms=160)
+        time.sleep(0.08)
+        user32.keybd_event(VK_CONTROL, 0, 0, 0)
+        time.sleep(0.04)
+        user32.keybd_event(VK_K, 0, 0, 0)
+        time.sleep(0.10)
+        user32.keybd_event(VK_K, 0, 2, 0)
+        time.sleep(0.04)
+        user32.keybd_event(VK_CONTROL, 0, 2, 0)
         time.sleep(0.12)
-
-        # On retry attempts, tap ESC first to clear any popup/menu state in Live View
-        if attempt > 1:
-            user32.keybd_event(VK_ESCAPE, 0, 0, 0)
-            time.sleep(0.03)
-            user32.keybd_event(VK_ESCAPE, 0, 2, 0)
-            time.sleep(0.06)
-
-        hold_sec = 0.11 if attempt == 1 else 0.14
+        log(f"[C1 Companion] Sent Ctrl+K capture command to Capture One (attempt {attempt})")
+    elif live_hwnd:
+        # Fallback if only Live View window is found: Spacebar
+        force_foreground(live_hwnd, wait_confirm_ms=160)
+        time.sleep(0.08)
         user32.keybd_event(VK_SPACE, 0, 0, 0)
-        time.sleep(hold_sec)
+        time.sleep(0.10)
         user32.keybd_event(VK_SPACE, 0, 2, 0)
-        # Critical: keep Live View in foreground for 220ms so WPF processes the keystroke before browser refocus
-        time.sleep(0.22)
-        log(f"[C1 Companion] Sent SPACEBAR shutter pulse to Live View (attempt {attempt})")
-
-        # If this is a retry (attempt >= 2) and Main window also exists, also trigger Main window via F7
-        if attempt >= 2 and main_hwnd and main_hwnd != live_hwnd:
-            force_foreground(main_hwnd, wait_confirm_ms=180)
-            time.sleep(0.10)
-            user32.keybd_event(VK_F7, 0, 0, 0)
-            time.sleep(0.10)
-            user32.keybd_event(VK_F7, 0, 2, 0)
-            time.sleep(0.18)
-            log(f"[C1 Companion] Sent fallback F7 shutter pulse to Main window (attempt {attempt})")
-    elif main_hwnd:
-        force_foreground(main_hwnd, wait_confirm_ms=220)
         time.sleep(0.12)
-        if attempt > 1:
-            user32.keybd_event(VK_ESCAPE, 0, 0, 0)
-            time.sleep(0.03)
-            user32.keybd_event(VK_ESCAPE, 0, 2, 0)
-            time.sleep(0.06)
-
-        user32.keybd_event(VK_F7, 0, 0, 0)
-        time.sleep(0.11)
-        user32.keybd_event(VK_F7, 0, 2, 0)
-        time.sleep(0.22)
-        log(f"[C1 Companion] Sent F7 shutter pulse to Main window (attempt {attempt})")
+        log(f"[C1 Companion] Sent SPACEBAR shutter pulse to Live View (attempt {attempt})")
 
 
 def has_inflight_transfer(before_files):
@@ -295,19 +266,19 @@ def trigger_capture_and_ingest(trigger_data):
     browser_hwnd = find_photobooth_browser()
     before_files = set(os.listdir(CAPTURE_DIR)) if os.path.exists(CAPTURE_DIR) else set()
 
-    # 1st Shutter trigger pulse
+    # 1st Shutter trigger pulse (Spacebar to Live View)
     send_shutter_pulse(wins, target_hwnd, attempt=1)
+    # Immediately restore browser focus so photobooth UI remains seamless
     focus_browser(browser_hwnd)
 
     new_capture_file = None
     start_wait = time.time()
     retry_1_sent = False
     retry_2_sent = False
-    retry_3_sent = False
 
-    while time.time() - start_wait < 15.5:
+    while time.time() - start_wait < 25.0:
         elapsed = time.time() - start_wait
-        time.sleep(0.09)
+        time.sleep(0.08)
         current_files = set(os.listdir(CAPTURE_DIR))
         diff = current_files - before_files
         # Ignore temporary partial files starting with '~' until Capture One renames them to final .CR3
@@ -321,37 +292,35 @@ def trigger_capture_and_ingest(trigger_data):
                 key=lambda fn: os.path.getmtime(os.path.join(CAPTURE_DIR, fn)), reverse=True
             )
             candidate = os.path.join(CAPTURE_DIR, image_diff[0])
-            time.sleep(0.22)
-            if os.path.exists(candidate) and os.path.getsize(candidate) > 100_000:
-                new_capture_file = candidate
+            # Wait for file to finish writing (size > 100KB and stable)
+            for _ in range(16):
+                if os.path.exists(candidate) and os.path.getsize(candidate) > 200_000:
+                    time.sleep(0.25)
+                    new_capture_file = candidate
+                    break
+                time.sleep(0.15)
+            if new_capture_file:
                 break
 
-        # Safety Retry #1 at 3.1s if camera hasn't started transferring a file
-        if not retry_1_sent and elapsed >= 3.1:
+        # If a file transfer is already detected in progress, NEVER retry (it will abort or double capture)
+        if has_inflight_transfer(before_files):
+            continue
+
+        # Gentle Retry #1 only after 7.0s if camera hasn't responded (gives Canon M50 Mark II time to meter & write)
+        if not retry_1_sent and elapsed >= 7.0:
             retry_1_sent = True
-            if not has_inflight_transfer(before_files):
-                log(f"[C1 Companion] {elapsed:.1f}s without capture for {job_id} -> sending Retry #1...")
-                wins = find_c1_windows()
-                send_shutter_pulse(wins, target_hwnd, attempt=2)
-                focus_browser(browser_hwnd)
+            log(f"[C1 Companion] {elapsed:.1f}s without transfer for {job_id} -> gentle Retry #1...")
+            wins = find_c1_windows()
+            send_shutter_pulse(wins, target_hwnd, attempt=2)
+            focus_browser(browser_hwnd)
 
-        # Safety Retry #2 at 6.3s if camera still hasn't started transferring a file
-        if not retry_2_sent and elapsed >= 6.3:
+        # Gentle Retry #2 only after 14.0s
+        if not retry_2_sent and elapsed >= 14.0:
             retry_2_sent = True
-            if not has_inflight_transfer(before_files):
-                log(f"[C1 Companion] {elapsed:.1f}s without capture for {job_id} -> sending Retry #2...")
-                wins = find_c1_windows()
-                send_shutter_pulse(wins, target_hwnd, attempt=3)
-                focus_browser(browser_hwnd)
-
-        # Safety Retry #3 at 9.6s
-        if not retry_3_sent and elapsed >= 9.6:
-            retry_3_sent = True
-            if not has_inflight_transfer(before_files):
-                log(f"[C1 Companion] {elapsed:.1f}s without capture for {job_id} -> sending Retry #3...")
-                wins = find_c1_windows()
-                send_shutter_pulse(wins, target_hwnd, attempt=4)
-                focus_browser(browser_hwnd)
+            log(f"[C1 Companion] {elapsed:.1f}s without transfer for {job_id} -> gentle Retry #2...")
+            wins = find_c1_windows()
+            send_shutter_pulse(wins, target_hwnd, attempt=3)
+            focus_browser(browser_hwnd)
 
     if not new_capture_file:
         log(f"[C1 Companion] Timeout: No new capture file received from Canon for {job_id}")

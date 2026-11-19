@@ -101,6 +101,8 @@ while ($true) {
                 }
             } catch {
                 Write-SpoolerLog "Error executing job $($job.Name): $($_.Exception.Message)" "ERROR"
+                $errPath = [System.IO.Path]::ChangeExtension($job.FullName, ".err")
+                Move-Item -Path $job.FullName -Destination $errPath -Force -ErrorAction SilentlyContinue
             }
         }
     } catch {

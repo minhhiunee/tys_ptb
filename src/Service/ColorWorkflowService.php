@@ -111,7 +111,7 @@ class ColorWorkflowService
     {
         $start = hrtime(true);
         $graded = 0;
-        if (!$this->shouldGradeAtIngest()) {
+        if ($this->isCaptureOneEnabled() || !$this->shouldGradeAtIngest()) {
             return ['graded' => 0, 'ms' => 0.0];
         }
 
@@ -144,6 +144,10 @@ class ColorWorkflowService
      */
     public function warmUpPresets(): int
     {
+        if ($this->isCaptureOneEnabled() || !$this->isInteractive()) {
+            return 0;
+        }
+
         $warmed = 0;
         foreach (PresetService::getInstance()->getEnabledPresets() as $preset) {
             if (!empty($preset->lutFile)) {

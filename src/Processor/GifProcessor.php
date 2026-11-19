@@ -552,6 +552,7 @@ class GifProcessor
      */
     protected function encodeWithImagick(array $framePaths, string $targetGifPath, int $delayMs): bool
     {
+        $animation = null;
         try {
             $animation = new \Imagick();
             $animation->setFormat('gif');
@@ -561,13 +562,16 @@ class GifProcessor
 
             foreach ($framePaths as $path) {
                 $frame = new \Imagick($path);
-                $frame->setImageDelay($ticks);
-                $frame->setImageDispose(\Imagick::DISPOSE_NONE);
-                // Per-frame 256-color sRGB quantization (treeDepth=6 -> Local Color Table) to prevent skin-tone banding
-                $frame->quantizeImage(256, \Imagick::COLORSPACE_SRGB, 6, false, false);
-                $animation->addImage($frame);
-                $frame->clear();
-                $frame->destroy();
+                try {
+                    $frame->setImageDelay($ticks);
+                    $frame->setImageDispose(\Imagick::DISPOSE_NONE);
+                    // Per-frame 256-color sRGB quantization (treeDepth=6 -> Local Color Table) to prevent skin-tone banding
+                    $frame->quantizeImage(256, \Imagick::COLORSPACE_SRGB, 6, false, false);
+                    $animation->addImage($frame);
+                } finally {
+                    $frame->clear();
+                    $frame->destroy();
+                }
             }
 
             $animation->setImageIterations(0); // Infinite loop
@@ -580,13 +584,15 @@ class GifProcessor
                 @unlink($tmpTarget);
             }
 
-            $animation->clear();
-            $animation->destroy();
-
             return $result && file_exists($targetGifPath);
         } catch (\Throwable $e) {
             $this->logger->warning('Imagick GIF encoding failed, falling back to GD: ' . $e->getMessage());
             return false;
+        } finally {
+            if ($animation instanceof \Imagick) {
+                $animation->clear();
+                $animation->destroy();
+            }
         }
     }
 

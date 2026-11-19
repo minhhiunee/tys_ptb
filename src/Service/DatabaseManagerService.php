@@ -13,6 +13,7 @@ class DatabaseManagerService
 {
     public string $databaseFile = '';
     public string $imageDirectory = '';
+    private ?array $contentCache = null;
 
     public function __construct()
     {
@@ -26,6 +27,10 @@ class DatabaseManagerService
      */
     public function getContentFromDB(): array
     {
+        if ($this->contentCache !== null) {
+            return $this->contentCache;
+        }
+
         // check if the database file is defined and non-empty
         if (!isset($this->databaseFile) || empty($this->databaseFile)) {
             throw new \Exception('Database not defined.');
@@ -43,7 +48,7 @@ class DatabaseManagerService
                     throw new \Exception('Failed to decode JSON: ' . json_last_error_msg());
                 }
 
-                return is_array($decodedData) ? $decodedData : [];
+                return $this->contentCache = (is_array($decodedData) ? $decodedData : []);
             } else {
                 throw new \Exception('File not found: ' . $this->databaseFile);
             }
@@ -51,7 +56,7 @@ class DatabaseManagerService
             // do nothing
         }
 
-        return [];
+        return $this->contentCache = [];
     }
 
     /**
@@ -120,6 +125,7 @@ class DatabaseManagerService
             if (file_put_contents($this->databaseFile, $encoded) === false) {
                 throw new \Exception('Failed to write database file: ' . $this->databaseFile);
             }
+            $this->contentCache = $currContent;
         }
     }
 
@@ -140,17 +146,20 @@ class DatabaseManagerService
 
         if (in_array($content, $currContent)) {
             unset($currContent[array_search($content, $currContent)]);
-            $encoded = json_encode(array_values($currContent));
+            $currContent = array_values($currContent);
+            $encoded = json_encode($currContent);
             if ($encoded === false) {
                 throw new \Exception('Failed to encode database content to JSON: ' . json_last_error_msg());
             }
             if (file_put_contents($this->databaseFile, $encoded) === false) {
                 throw new \Exception('Failed to write database file: ' . $this->databaseFile);
             }
+            $this->contentCache = $currContent;
         }
 
         if (file_exists($this->databaseFile) && empty($currContent)) {
             unlink($this->databaseFile);
+            $this->contentCache = [];
         }
     }
 
@@ -230,6 +239,8 @@ class DatabaseManagerService
             if (file_put_contents($this->databaseFile, $jsonData) === false) {
                 throw new \Exception('Error: Failed to write data to database.');
             }
+
+            $this->contentCache = $filenames;
 
             return 'success';
         } catch (\Exception $e) {
